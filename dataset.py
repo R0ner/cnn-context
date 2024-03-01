@@ -9,12 +9,20 @@ from torchvision import transforms
 class HWSet(Dataset):
     """Dataset class for the Husky vs. Wolf dataset."""
 
-    def __init__(self, data_dir, transform=None):
+    def __init__(self, data_dir, split, transform=None):
         self.data_dir = data_dir
+        self.split = split.lower()
         self.transform = transform
         self.val_img_dir = f"{self.data_dir}/val_images_hw"
+        self.train_img_dirs = [f"{self.data_dir}/train_images_{idx}_hw" for idx in range(4)]
+        self.train_img_dirs = [img_dir for img_dir in self.train_img_dirs if os.path.exists(img_dir)]
 
-        self.imgs = os.listdir(self.val_img_dir)
+        if self.split == 'val':
+            self.imgs = [f"{self.val_img_dir}/{img_file}" for img_file in os.listdir(self.val_img_dir)]
+        elif self.split == 'train':
+            self.imgs = list()
+            for img_dir in self.train_img_dirs:
+                self.imgs.extend([f"{img_dir}/{img_file}" for img_file in os.listdir(img_dir)])
 
         self.labels = []
         for f in self.imgs:
@@ -29,7 +37,7 @@ class HWSet(Dataset):
         return self.labels.size
 
     def __getitem__(self, item):
-        img = Image.open(f"{self.val_img_dir}/{self.imgs[item]}")
+        img = Image.open(self.imgs[item])
 
         if self.transform is not None:
             img = self.transform(img)
