@@ -23,7 +23,9 @@ class HWSet(Dataset):
             self.imgs = list()
             for img_dir in self.train_img_dirs:
                 self.imgs.extend([f"{img_dir}/{img_file}" for img_file in os.listdir(img_dir)])
-
+        
+        self.imgs = list(filter(os.path.isfile, self.imgs))
+        self.imgs = sorted(self.imgs)
         self.labels = []
         for f in self.imgs:
             for label, (idx, name, obj_id) in enumerate([(3, "siberian husky", "n02110185"), (205, "grey wolf", "n02114367")]):
@@ -43,6 +45,38 @@ class HWSet(Dataset):
             img = self.transform(img)
 
         return (img, self.labels[item])
+    
+class HWSetMasks(HWSet):
+    """Dataset class for returning images with their segmentation masks."""
+
+    def __init__(self, data_dir, split, transform_shared=None, transform_img=None):
+        super().__init__(data_dir, split, transform)
+        self.transform_shared = transform_shared
+        self.transform_img = transform_img
+
+        self.val_mask_dir = f"{self.val_img_dir}_masks"
+        self.train_mask_dirs = [f"{img_dir}_masks" for img_dir in self.train_img_dirs]
+        if self.split == 'val':
+            self.masks = [f"{self.val_mask_dir}/{mask_file}" for mask_file in os.listdir(self.val_mask_dir)]
+        elif self.split == 'train':
+            self.masks = list()
+            for mask_dir in self.train_mask_dirs:
+                self.masks.extend([f"{mask_dir}/{mask_file}" for mask_file in os.listdir(mask_dir)])
+        self.masks = list(filter(os.path.isfile, self.masks))
+        self.masks = sorted(self.masks)
+    
+    def __getitem__(self, item):
+        img = Image.open(self.imgs[item])
+        mask = Image.open(self.masks[item])
+
+        if self.transform_shared is not None:
+            img, mask = self.transform_shared(img, mask)
+        
+        if self.transform_img is not None:
+            img = self.transform_img(img)
+        
+        return img, self.labels[item], mask
+
 
 
 transform = transforms.Compose(
