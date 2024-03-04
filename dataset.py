@@ -71,7 +71,7 @@ class HWSetMasks(HWSet):
         self.masks = sorted(self.masks)
     
     def __getitem__(self, item):
-        img = Image.open(self.imgs[item])
+        img = Image.open(self.imgs[item]).convert('RGB')
         mask = Image.open(self.masks[item])
 
         if self.transform_shared is not None:
