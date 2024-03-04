@@ -14,6 +14,7 @@ class HWSet(Dataset):
         self.split = split.lower()
         self.transform = transform
         self.val_img_dir = f"{self.data_dir}/val_images_hw"
+        self.test_img_dir = f"{self.data_dir}/test_images_hw"
         self.train_img_dirs = [f"{self.data_dir}/train_images_{idx}_hw" for idx in range(4)]
         self.train_img_dirs = [img_dir for img_dir in self.train_img_dirs if os.path.exists(img_dir)]
 
@@ -23,6 +24,8 @@ class HWSet(Dataset):
             self.imgs = list()
             for img_dir in self.train_img_dirs:
                 self.imgs.extend([f"{img_dir}/{img_file}" for img_file in os.listdir(img_dir)])
+        elif self.split == 'test':
+            self.imgs = [f"{self.test_img_dir}/{img_file}" for img_file in os.listdir(self.test_img_dir)]
         
         self.imgs = list(filter(os.path.isfile, self.imgs))
         self.imgs = sorted(self.imgs)
@@ -62,6 +65,8 @@ class HWSetMasks(HWSet):
             self.masks = list()
             for mask_dir in self.train_mask_dirs:
                 self.masks.extend([f"{mask_dir}/{mask_file}" for mask_file in os.listdir(mask_dir)])
+        elif self.split == 'test':
+            self.masks = [f"{self.test_mask_dir}/{mask_file}" for mask_file in os.listdir(self.test_mask_dir)]
         self.masks = list(filter(os.path.isfile, self.masks))
         self.masks = sorted(self.masks)
     
