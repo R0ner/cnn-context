@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch.autograd import Variable
 
 
 def train_step(model, imgs, labels, optimizer, criterion, device="cpu", metrics=None):
@@ -27,7 +28,7 @@ def eval_step(model, imgs, labels, masks, criterion, device="cpu", metrics=None)
         return
 
     slc, score, indices, out = get_saliency(model, imgs, device=device)
-    obj_score = obj_score(slc, masks)
+    obj_score = get_obj_score(slc, masks)
     with torch.no_grad():
         loss = criterion(out, labels.type(torch.LongTensor))
 
@@ -38,7 +39,7 @@ def eval_step(model, imgs, labels, masks, criterion, device="cpu", metrics=None)
     metrics["obj_scores"].append(obj_score)
 
 
-def obj_score(slc, masks):
+def get_obj_score(slc, masks):
     mask = masks[0, 0].numpy().astype(bool)
 
     area = mask.shape[0] * mask.shape[1]
@@ -56,7 +57,7 @@ def obj_score(slc, masks):
 
 def get_saliency(model, imgs, device="cpu"):
     # Calculate gradient of higest score w.r.t. input
-    imgs.requires_grad = True
+    imgs = Variable(imgs.data, requires_grad=True)
 
     # Get predictions (forward pass)
     out = model(imgs.to(device))
@@ -69,14 +70,22 @@ def get_saliency(model, imgs, device="cpu"):
     slc = imgs.grad[0].cpu()
 
     # normalize to [-1..1]
-    _, indices = torch.max(torch.abs(slc), dim=0)
+    _, slc_indices = torch.max(torch.abs(slc), dim=0)
 
-    slc_new = torch.zeros(indices.size())
+    slc_new = torch.zeros(slc_indices.size())
 
     for channel in range(slc.size()[0]):
-        slc_new += slc[channel] * (indices == channel)
+        slc_new += slc[channel] * (slc_indices == channel)
 
     slc_new /= slc_new.abs().max()
     slc = slc_new.numpy()
 
     return slc, score.cpu(), indices.cpu(), out.cpu()
+
+def get_performance(metrics: dict[list]) -> dict[float]:
+    performance = {}
+    performance['mean_loss'] = np.mean(metrics['loss']).item()
+    performance['accuracy'] = np.mean(np.concatenate(metrics['preds']) == np.concatenate(metrics['labels'])).item()
+    if 'obj_scores' in metrics:
+        performance['mean_obj_score'] = np.mean(metrics['obj_scores']).item()
+    return performance

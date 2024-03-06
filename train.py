@@ -8,7 +8,7 @@ from torchvision.models import resnet18, resnet50
 from tqdm import tqdm
 
 from dataset import get_dloader
-from util import eval_step, train_step
+from util import eval_step, get_performance, train_step
 
 # Random seed
 seed = 191510
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     lr = 1e-3
 
     # Training
-    n_epochs = 1000
+    n_epochs = 10
 
     model_a, model_b = get_model(model_type, device=device, seed=seed), get_model(
         model_type, device=device, seed=seed
@@ -62,6 +62,7 @@ if __name__ == "__main__":
     valloader = get_dloader("val", batch_size=1, num_workers=num_workers)
 
     # Training loop
+    print(f"Start training with model type: {model_type}")
     for epoch in range(n_epochs):
         metrics_train_a = {"loss": [], "preds": [], "scores": [], "labels": []}
         metrics_train_b = {"loss": [], "preds": [], "scores": [], "labels": []}
@@ -79,6 +80,8 @@ if __name__ == "__main__":
             "labels": [],
             "obj_scores": [],
         }
+
+        print(f"Epoch {epoch}")
 
         # Train
         model_a.train()
@@ -106,7 +109,7 @@ if __name__ == "__main__":
         # Val
         model_a.eval()
         model_b.eval()
-        for imgs, labels, masks in tqdm(trainloader):
+        for imgs, labels, masks in tqdm(valloader):
             eval_step(
                 model_a,
                 imgs,
@@ -118,10 +121,18 @@ if __name__ == "__main__":
             )
             eval_step(
                 model_b,
-                imgs,
+                imgs * masks,
                 labels,
                 masks,
                 criterion,
                 device=device,
                 metrics=metrics_val_b,
             )
+        # Calculate performance metrics
+        performance_train_a, performance_train_b = get_performance(metrics_train_a), get_performance(metrics_train_b)
+        performance_val_a, performance_val_b = get_performance(metrics_val_a), get_performance(metrics_val_b)
+
+        print(performance_train_a)
+        print(performance_train_b)
+        print(performance_val_a)
+        print(performance_val_b)
