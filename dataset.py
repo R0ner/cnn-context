@@ -152,12 +152,27 @@ def get_dloader(split, batch_size, **kwargs):
     split = split.lower()
     shuffle = False
     if split == "train":
-        dset = HWSetMasks("data", split, transform_shared=None, transform_img=None)
+        dset = HWSetMasks(
+            "data",
+            split,
+            transform_shared=transform_shared_augment,
+            transform_img=transform_img_augment,
+        )
         shuffle = True
     elif split == "val":
-        dset = HWSetMasks("data", split, transform_shared=None, transform_img=None)
+        dset = HWSetMasks(
+            "data",
+            split,
+            transform_shared=transform_shared,
+            transform_img=transform_img,
+        )
     elif split == "test":
-        dset = HWSetMasks("data", split, transform_shared=None, transform_img=None)
+        dset = HWSetMasks(
+            "data",
+            split,
+            transform_shared=transform_shared,
+            transform_img=transform_img,
+        )
     dloader = DataLoader(
         dset,
         batch_size=batch_size,
@@ -184,3 +199,48 @@ normalize_inv = transforms.Compose(
         transforms.Normalize(mean=(-0.485, -0.456, -0.406), std=(1.0, 1.0, 1.0)),
     ]
 )  # For visualization purposes.
+
+totensor = transforms.Compose(
+    [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]
+)
+
+transform_shared = transforms.Compose(
+    [transforms.Resize(256, antialias=True), totensor]
+)
+
+transform_img = transforms.Compose(
+    [
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ]
+)
+
+transform_shared_augment = transforms.Compose(
+    [
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomApply([transforms.RandomRotation(45, expand=False)], p=0.3),
+        transforms.RandomApply(
+            [
+                transforms.RandomResizedCrop(
+                    256, scale=(0.5, 1), ratio=(3 / 4, 4 / 3), antialias=True
+                )
+            ],
+            p=0.3,
+        ),
+        transform_shared,
+    ]
+)
+
+transform_img_augment = transforms.Compose(
+    [
+        transforms.RandomApply(
+            [
+                transforms.ColorJitter(
+                    brightness=0.3, contrast=0.3, hue=0.3, saturation=0.3
+                )
+            ],
+            p=0.4,
+        ),
+        transforms.RandomGrayscale(p=0.05),
+        transform_img,
+    ]
+)
