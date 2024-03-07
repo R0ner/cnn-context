@@ -1,10 +1,10 @@
+import argparse
 import os
 import time
 
 import numpy as np
 import pandas as pd
 import torch
-import torchvision.transforms.v2 as transforms
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.models import resnet18, resnet50
 from tqdm import tqdm
@@ -38,40 +38,62 @@ def get_model(model_type, device="cpu", seed=191510):
     return model
 
 
+def get_args_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser("HW experiment hyperparameters", add_help=False)
+    parser.add_argument('--lr', default=1e-3, type=float)
+    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--epochs', default=1000, type=int)
+
+    # Model parameters
+    parser.add_argument('--model_type', type=str, default="r18",
+                        help="Model type (r18 or r50)")
+    
+    # Learning rate scheduler and early stopping
+    parser.add_argument('--lr_patience', default=20, type=int)
+    parser.add_argument('--patience', default=40, type=int)
+
+    # weights and biases
+    parser.add_argument('--wandb', action='store_true')
+    return parser
+
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser('HW training script', parents=[get_args_parser()])
+    args = parser.parse_args()
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     print(f"Using device: {device}")
 
     # Hyperparameters
     # Model
-    model_type = "r18"
+    model_type = args.model_type
     assert model_type in model_types, "Invalid model type: " + model_type
 
     # Data
-    batch_size = 4
+    batch_size = args.batch_size
     num_workers = 0
 
     # Optimizer
-    lr = 1e-3
+    lr = args.lr
 
     # Training
-    n_epochs = 100
+    n_epochs = args.epochs
 
     # Learning rate scheduler
     factor = 0.1
-    lr_patience = 10
+    lr_patience = args.lr_patience
 
     # Early stopping
-    patience = 20
+    patience = args.patience
 
     # Checkpoints
-    save_every = 20
+    save_every = 40
 
     # Use wandb
-    use_wandb = True
+    use_wandb = args.wandb
 
-    save_dir = f"models/hw-checkpoints/run-{time.strftime("%Y%m%d-%H%M%S")}"
+    save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
     save_dir_a = f"{save_dir}/a"
     save_dir_b = f"{save_dir}/b"
     for dir in (save_dir, save_dir_a, save_dir_b):
@@ -238,6 +260,9 @@ if __name__ == "__main__":
                     'epoch': epoch,
                     'model_state_dict': model_b.state_dict()
                 }, f"{save_dir_b}/{model_type}_e{epoch}.cpt")
+            stats_df = pd.DataFrame.from_dict(all_stats, orient='index')
+            stats_df.to_csv(f"{save_dir}/stats.csv")
+
         
         if stop_a and not completed_a:
             torch.save({
