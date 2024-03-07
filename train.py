@@ -11,7 +11,8 @@ from tqdm import tqdm
 
 import wandb
 from dataset import get_dloader
-from util import eval_step, get_performance, train_step
+from util import (DummyModel, EarlyStopper, eval_step, get_performance,
+                  train_step)
 
 # Random seed
 seed = 191510
@@ -59,13 +60,16 @@ if __name__ == "__main__":
 
     # Learning rate scheduler
     factor = 0.1
-    patience = 10
+    lr_patience = 10
+
+    # Early stopping
+    patience = 20
 
     # Checkpoints
     save_every = 20
 
     # Use wandb
-    use_wandb = False
+    use_wandb = True
 
     save_dir = f"models/hw-checkpoints/run-{time.strftime("%Y%m%d-%H%M%S")}"
     save_dir_a = f"{save_dir}/a"
@@ -90,8 +94,12 @@ if __name__ == "__main__":
     optimizer_b = torch.optim.Adam(model_b.parameters(), lr=lr)
 
     # Learning rate schedulers
-    lr_scheduler_a = ReduceLROnPlateau(optimizer_a, mode='min', factor=factor, patience=patience)
-    lr_scheduler_b = ReduceLROnPlateau(optimizer_b, mode='min', factor=factor, patience=patience)
+    lr_scheduler_a = ReduceLROnPlateau(optimizer_a, mode='min', factor=factor, patience=lr_patience)
+    lr_scheduler_b = ReduceLROnPlateau(optimizer_b, mode='min', factor=factor, patience=lr_patience)
+
+    # Early stopping
+    earlystopper_a = EarlyStopper(mode='min', patience=patience)
+    earlystopper_b = EarlyStopper(mode='min', patience=patience)
 
     trainloader = get_dloader("train", batch_size, num_workers=num_workers)
     valloader = get_dloader("val", batch_size=1, num_workers=num_workers)
@@ -109,6 +117,8 @@ if __name__ == "__main__":
         )
     
     all_stats = {}
+    completed_a = False
+    completed_b = False
 
     # Training loop
     print(f"Start training with model type: {model_type}")
@@ -178,41 +188,75 @@ if __name__ == "__main__":
                 metrics=metrics_val_b,
             )
         # Calculate performance metrics
-        performance_train_a, performance_train_b = get_performance(
-            metrics_train_a
-        ), get_performance(metrics_train_b)
-        performance_val_a, performance_val_b = get_performance(
-            metrics_val_a
-        ), get_performance(metrics_val_b)
+        log_stats = dict()
+        if not completed_a:
+            performance_train_a = get_performance(metrics_train_a)
+            performance_val_a = get_performance(metrics_val_a)
+            
+            print(performance_train_a)
+            print(performance_val_a)
+            
+            lr_scheduler_a.step(performance_val_a['mean_loss'])
+            stop_a = earlystopper_a(performance_val_a['mean_loss'])
 
-        print(performance_train_a)
-        print(performance_train_b)
-        print(performance_val_a)
-        print(performance_val_b)
+            log_stats = log_stats | \
+                {f'train/{k}_a': v for k, v in performance_train_a.items()} | \
+                {f'val/{k}_a': v for k, v in performance_val_a.items()} | \
+                {'param/lr_a': optimizer_a.param_groups[-1]['lr']}
         
-        lr_scheduler_a.step(performance_val_a['mean_loss'])
-        lr_scheduler_b.step(performance_val_b['mean_loss'])
+        if not completed_b:
+            performance_train_b = get_performance(metrics_train_b)
+            performance_val_b = get_performance(metrics_val_b)
+            
+            print(performance_train_b)
+            print(performance_val_b)
+            
+            lr_scheduler_b.step(performance_val_b['mean_loss'])
+            stop_b = earlystopper_b(performance_val_b['mean_loss'])
 
-        if (epoch + 1) % save_every == 0:
+            log_stats = log_stats | \
+                {f'train/{k}_b': v for k, v in performance_train_b.items()} | \
+                {f'val/{k}_b': v for k, v in performance_val_b.items()} | \
+                {'param/lr_b': optimizer_b.param_groups[-1]['lr']}
+            
+        # Track stats
+        all_stats[epoch] = log_stats
+
+        # WandB
+        if use_wandb:
+            wandb.log(log_stats)
+        
+        # Save checkpoints
+        if (epoch + 1) % save_every == 0 or (epoch + 1) == n_epochs:
+            if not completed_a:
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model_a.state_dict()
+                }, f"{save_dir_a}/{model_type}_e{epoch}.cpt")
+            if not completed_b:
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model_b.state_dict()
+                }, f"{save_dir_b}/{model_type}_e{epoch}.cpt")
+        
+        if stop_a and not completed_a:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model_a.state_dict()
             }, f"{save_dir_a}/{model_type}_e{epoch}.cpt")
+            completed_a = True
+            model_a = DummyModel()
+        
+        if stop_b and not completed_b:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model_b.state_dict()
             }, f"{save_dir_b}/{model_type}_e{epoch}.cpt")
-
-        # WandB
-        log_stats = {f'train/{k}_a': v for k, v in performance_train_a.items()}
-        log_stats = log_stats | {f'train/{k}_b': v for k, v in performance_train_b.items()}
-        log_stats = log_stats | {f'val/{k}_a': v for k, v in performance_val_a.items()}
-        log_stats = log_stats | {f'val/{k}_b': v for k, v in performance_val_b.items()}
-        log_stats = log_stats | {'param/lr_a': optimizer_a.param_groups[-1]['lr'], 'param/lr_b': optimizer_b.param_groups[-1]['lr']}
-        all_stats[epoch] = log_stats
-
-        if use_wandb:
-            wandb.log(log_stats)
+            completed_b = True
+            model_b = DummyModel()
+        
+        if completed_a and completed_b:
+            break
 
     stats_df = pd.DataFrame.from_dict(all_stats, orient='index')
     stats_df.to_csv(f"{save_dir}/stats.csv")

@@ -3,7 +3,53 @@ import torch
 from torch.autograd import Variable
 
 
+class EarlyStopper:
+    def __init__(self, mode="min", patience=5) -> None:
+        assert mode in ('min', 'max')
+        self.mode = mode
+        self.patience = patience
+        self.best = None
+        self.counter = None
+        self.reset()
+
+    def reset(self) -> None:
+        self.best = float("inf") if self.mode == "min" else -float("inf")
+        self.counter = 0
+
+    def __call__(self, metric: float) -> bool:
+        stop = False
+        if self.mode == "min":
+            if metric < self.best:
+                self.best = metric
+                self.counter = 0
+            else:
+                self.counter += 1
+                if self.counter >= self.patience:
+                    stop = True
+        elif self.mode == "max":
+            if metric > self.best:
+                self.best = metric
+                self.counter = 0
+            else:
+                self.counter += 1
+                if self.counter >= self.patience:
+                    stop = True
+        return stop
+
+class DummyModel:
+    def __init__(self) -> None:
+        pass
+
+    def train(self) -> None:
+        pass
+
+    def eval(self) -> None:
+        pass
+
 def train_step(model, imgs, labels, optimizer, criterion, device="cpu", metrics=None):
+    if isinstance(model, DummyModel):
+        return
+    
     optimizer.zero_grad()
     out = model(imgs.to(device))
 
@@ -24,7 +70,7 @@ def train_step(model, imgs, labels, optimizer, criterion, device="cpu", metrics=
 
 
 def eval_step(model, imgs, labels, masks, criterion, device="cpu", metrics=None):
-    if metrics is None:
+    if metrics is None or isinstance(model, DummyModel):
         return
 
     slc, score, indices, out = get_saliency(model, imgs, device=device)
@@ -82,10 +128,13 @@ def get_saliency(model, imgs, device="cpu"):
 
     return slc, score.cpu(), indices.cpu(), out.cpu()
 
+
 def get_performance(metrics: dict[list]) -> dict[float]:
     performance = {}
-    performance['mean_loss'] = np.mean(metrics['loss']).item()
-    performance['accuracy'] = np.mean(np.concatenate(metrics['preds']) == np.concatenate(metrics['labels'])).item()
-    if 'obj_scores' in metrics:
-        performance['mean_obj_score'] = np.mean(metrics['obj_scores']).item()
+    performance["mean_loss"] = np.mean(metrics["loss"]).item()
+    performance["accuracy"] = np.mean(
+        np.concatenate(metrics["preds"]) == np.concatenate(metrics["labels"])
+    ).item()
+    if "obj_scores" in metrics:
+        performance["mean_obj_score"] = np.mean(metrics["obj_scores"]).item()
     return performance
