@@ -5,7 +5,7 @@
 #BSUB -n 4
 #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1"
-#BSUB -W 60
+#BSUB -W 240
 #BSUB -R "rusage[mem=16384]"
 
 nvidia-smi

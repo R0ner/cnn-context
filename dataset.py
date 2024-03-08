@@ -148,12 +148,12 @@ def pad_collate_fn(data):
     return (torch.stack(batch_images), batch_labels, torch.stack(batch_masks))
 
 
-def get_dloader(split, batch_size, **kwargs):
+def get_dloader(split, batch_size, data_dir="data", **kwargs):
     split = split.lower()
     shuffle = False
     if split == "train":
         dset = HWSetMasks(
-            "data",
+            data_dir,
             split,
             transform_shared=transform_shared_augment,
             transform_img=transform_img_augment,
@@ -161,14 +161,14 @@ def get_dloader(split, batch_size, **kwargs):
         shuffle = True
     elif split == "val":
         dset = HWSetMasks(
-            "data",
+            data_dir,
             split,
             transform_shared=transform_shared,
             transform_img=transform_img,
         )
     elif split == "test":
         dset = HWSetMasks(
-            "data",
+            data_dir,
             split,
             transform_shared=transform_shared,
             transform_img=transform_img,
