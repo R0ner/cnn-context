@@ -126,7 +126,7 @@ def get_saliency(model, imgs, device="cpu"):
     slc_new /= slc_new.abs().max()
     slc = slc_new.numpy()
 
-    return slc, score.cpu(), indices.cpu(), out.cpu()
+    return slc, score.detach().cpu(), indices.detach().cpu(), out.detach().cpu()
 
 
 def get_performance(metrics: dict[list]) -> dict[float]:
