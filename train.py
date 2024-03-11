@@ -141,6 +141,9 @@ if __name__ == "__main__":
     all_stats = {}
     completed_a = False
     completed_b = False
+    
+    best_a = float('inf')
+    best_b = float('inf')
 
     # Training loop
     print(f"Start training with model type: {model_type}")
@@ -211,6 +214,7 @@ if __name__ == "__main__":
             )
         # Calculate performance metrics
         log_stats = dict()
+        prefix_a, prefix_b = '', ''
         if not completed_a:
             performance_train_a = get_performance(metrics_train_a)
             performance_val_a = get_performance(metrics_val_a)
@@ -225,6 +229,10 @@ if __name__ == "__main__":
                 {f'train/{k}_a': v for k, v in performance_train_a.items()} | \
                 {f'val/{k}_a': v for k, v in performance_val_a.items()} | \
                 {'param/lr_a': optimizer_a.param_groups[-1]['lr']}
+            
+            if performance_val_a['mean_loss'] > best_a and (epoch + 1) > save_every:
+                prefix_a = '_best'
+            best_a = min(best_a, performance_val_a['mean_loss'])
         
         if not completed_b:
             performance_train_b = get_performance(metrics_train_b)
@@ -241,25 +249,39 @@ if __name__ == "__main__":
                 {f'val/{k}_b': v for k, v in performance_val_b.items()} | \
                 {'param/lr_b': optimizer_b.param_groups[-1]['lr']}
             
+            if performance_val_b['mean_loss'] > best_b and (epoch + 1) > save_every:
+                prefix_b = '_best'
+            best_b = min(best_b, performance_val_b['mean_loss'])
+            
         # Track stats
         all_stats[epoch] = log_stats
 
         # WandB
         if use_wandb:
             wandb.log(log_stats)
-        
+
+        # Delete previous best.
+        if len(prefix_a):
+            for f in os.listdir(save_dir_a):
+                if prefix_a in f:
+                    os.remove(f"{save_dir_a}/{f}")
+        if len(prefix_b):
+            for f in os.listdir(save_dir_b):
+                if prefix_b in f:
+                    os.remove(f"{save_dir_b}/{f}")
+
         # Save checkpoints
-        if (epoch + 1) % save_every == 0 or (epoch + 1) == n_epochs:
+        if (epoch + 1) % save_every == 0 or (epoch + 1) == n_epochs or len(prefix_a) or len(prefix_b):
             if not completed_a:
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': model_a.state_dict()
-                }, f"{save_dir_a}/{model_type}_e{epoch}.cpt")
+                }, f"{save_dir_a}/{model_type}_e{epoch}{prefix_a}.cpt")
             if not completed_b:
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': model_b.state_dict()
-                }, f"{save_dir_b}/{model_type}_e{epoch}.cpt")
+                }, f"{save_dir_b}/{model_type}_e{epoch}{prefix_b}.cpt")
             stats_df = pd.DataFrame.from_dict(all_stats, orient='index')
             stats_df.to_csv(f"{save_dir}/stats.csv")
 
@@ -268,7 +290,7 @@ if __name__ == "__main__":
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model_a.state_dict()
-            }, f"{save_dir_a}/{model_type}_e{epoch}.cpt")
+            }, f"{save_dir_a}/{model_type}_e{epoch}{prefix_a}.cpt")
             completed_a = True
             model_a = DummyModel()
         
@@ -276,7 +298,7 @@ if __name__ == "__main__":
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model_b.state_dict()
-            }, f"{save_dir_b}/{model_type}_e{epoch}.cpt")
+            }, f"{save_dir_b}/{model_type}_e{epoch}{prefix_b}.cpt")
             completed_b = True
             model_b = DummyModel()
         
