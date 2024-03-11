@@ -269,39 +269,41 @@ if __name__ == "__main__":
             for f in os.listdir(save_dir_b):
                 if prefix_b in f:
                     os.remove(f"{save_dir_b}/{f}")
-
-        # Save checkpoints
-        if (epoch + 1) % save_every == 0 or (epoch + 1) == n_epochs or len(prefix_a) or len(prefix_b):
-            if not completed_a:
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model_a.state_dict()
-                }, f"{save_dir_a}/{model_type}_e{epoch}{prefix_a}.cpt")
-            if not completed_b:
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model_b.state_dict()
-                }, f"{save_dir_b}/{model_type}_e{epoch}{prefix_b}.cpt")
-            stats_df = pd.DataFrame.from_dict(all_stats, orient='index')
-            stats_df.to_csv(f"{save_dir}/stats.csv")
-
         
-        if stop_a and not completed_a:
+        # Save checkpoints
+        save = (epoch + 1) % save_every == 0 or (epoch + 1) == n_epochs
+        
+        save_a = (save or len(prefix_a) or stop_a) and not completed_a
+        save_b = (save or len(prefix_b) or stop_b) and not completed_b
+        
+        if save_a:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model_a.state_dict()
             }, f"{save_dir_a}/{model_type}_e{epoch}{prefix_a}.cpt")
-            completed_a = True
-            model_a = DummyModel()
-        
-        if stop_b and not completed_b:
+        if save_b:    
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model_b.state_dict()
             }, f"{save_dir_b}/{model_type}_e{epoch}{prefix_b}.cpt")
+        
+        # Save stats
+        if save:
+            stats_df = pd.DataFrame.from_dict(all_stats, orient='index')
+            stats_df.to_csv(f"{save_dir}/stats.csv")
+        
+        # If stop, set completed flag.
+        if stop_a and not completed_a:
+            completed_a = True
+            model_a = DummyModel()
+        
+        if stop_b and not completed_b:
             completed_b = True
             model_b = DummyModel()
         
+        
+        
+        # Break if both models converged.
         if completed_a and completed_b:
             break
 
