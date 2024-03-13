@@ -230,7 +230,7 @@ if __name__ == "__main__":
                 {f'val/{k}_a': v for k, v in performance_val_a.items()} | \
                 {'param/lr_a': optimizer_a.param_groups[-1]['lr']}
             
-            if performance_val_a['mean_loss'] > best_a and (epoch + 1) > save_every:
+            if performance_val_a['mean_loss'] < best_a and (epoch + 1) > save_every:
                 prefix_a = '_best'
             best_a = min(best_a, performance_val_a['mean_loss'])
         
@@ -249,7 +249,7 @@ if __name__ == "__main__":
                 {f'val/{k}_b': v for k, v in performance_val_b.items()} | \
                 {'param/lr_b': optimizer_b.param_groups[-1]['lr']}
             
-            if performance_val_b['mean_loss'] > best_b and (epoch + 1) > save_every:
+            if performance_val_b['mean_loss'] < best_b and (epoch + 1) > save_every:
                 prefix_b = '_best'
             best_b = min(best_b, performance_val_b['mean_loss'])
             
