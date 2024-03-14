@@ -217,11 +217,11 @@ transform_img = transforms.Compose(
 transform_shared_augment = transforms.Compose(
     [
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomApply([transforms.RandomRotation(45, expand=False)], p=0.3),
+        transforms.RandomApply([transforms.RandomRotation(60, expand=False)], p=0.3),
         transforms.RandomApply(
             [
                 transforms.RandomResizedCrop(
-                    256, scale=(0.5, 1), ratio=(3 / 4, 4 / 3), antialias=True
+                    256, scale=(0.3, 1), ratio=(3 / 4, 4 / 3), antialias=True
                 )
             ],
             p=0.3,
@@ -241,6 +241,12 @@ transform_img_augment = transforms.Compose(
             p=0.4,
         ),
         transforms.RandomGrayscale(p=0.05),
+        transforms.RandomApply(
+            [
+                transforms.GaussianBlur(kernel_size=7, sigma=(.1, 1.5))
+            ],
+            p=0.05
+        ),
         transform_img,
     ]
 )
