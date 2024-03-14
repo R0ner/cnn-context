@@ -217,7 +217,7 @@ transform_img = transforms.Compose(
 transform_shared_augment = transforms.Compose(
     [
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomApply([transforms.RandomRotation(60, expand=False)], p=0.3),
+        transforms.RandomApply([transforms.RandomRotation(45, expand=False)], p=0.3),
         transforms.RandomApply(
             [
                 transforms.RandomResizedCrop(
