@@ -241,12 +241,12 @@ transform_img_augment = transforms.Compose(
             p=0.4,
         ),
         transforms.RandomGrayscale(p=0.05),
-        transforms.RandomApply(
-            [
-                transforms.GaussianBlur(kernel_size=7, sigma=(.1, 1.5))
-            ],
-            p=0.05
-        ),
+        # transforms.RandomApply(
+        #     [
+        #         transforms.GaussianBlur(kernel_size=7, sigma=(.1, 1.5))
+        #     ],
+        #     p=0.05
+        # ),
         transform_img,
     ]
 )
