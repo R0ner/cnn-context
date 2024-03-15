@@ -10,7 +10,8 @@ from torchvision.models import resnet18, resnet50
 from tqdm import tqdm
 
 import wandb
-from dataset import get_dloader
+from dataset import get_dloader, normalize
+from perlin import get_rgb_fractal_noise
 from util import (DummyModel, EarlyStopper, eval_step, get_performance,
                   train_step)
 
@@ -152,12 +153,6 @@ if __name__ == "__main__":
 
     best = {name: float("inf") for name in names}
 
-    mean = torch.tensor((0.485, 0.456, 0.406)).repeat(2, 1).T
-    std = torch.tensor((0.229, 0.224, 0.225)).repeat(2, 1).T
-
-    lims = torch.tensor([[0, 1], [0, 1], [0, 1]])
-    lims = (lims - mean) / std
-
     # Training loop
     print(f"Start training with model type: {model_type}")
     for epoch in range(n_epochs):
@@ -196,9 +191,8 @@ if __name__ == "__main__":
             # noise = torch.randn(
             #     imgs.size(),
             # )
-            noise = torch.rand(imgs.size()) * (lims[:, 1] - lims[:, 0]).reshape(
-                -1, 3, 1, 1
-            ) + lims[:, 0].reshape(-1, 3, 1, 1)
+            # noise = normalize(torch.rand(imgs.size()))
+            noise = normalize(torch.from_numpy(np.stack([get_rgb_fractal_noise(*imgs.size()[-2:]) for _ in range(imgs.size(0))])).type(torch.FloatTensor))
             noise *= ~masks.bool()
 
             train_step(
@@ -234,14 +228,14 @@ if __name__ == "__main__":
         model_b.eval()
         model_c.eval()
 
-        # Ensure the same "random" noise every time.
-        gen = torch.Generator()
-        gen.manual_seed(seed)
+        # # Ensure the same "random" noise every time.
+        # gen = torch.Generator()
+        # gen.manual_seed(seed)
+        gen = iter(range(len(valloader.dataset) * 10))
         for imgs, labels, masks in tqdm(valloader):
             # noise = torch.randn(imgs.size(), generator=gen)
-            noise = torch.rand(imgs.size(), generator=gen) * (
-                lims[:, 1] - lims[:, 0]
-            ).reshape(-1, 3, 1, 1) + lims[:, 0].reshape(-1, 3, 1, 1)
+            # noise = normalize(torch.rand(imgs.size(), generator=gen))
+            noise = normalize(torch.from_numpy(np.stack([get_rgb_fractal_noise(*imgs.size()[-2:], gen) for _ in range(imgs.size(0))])).type(torch.FloatTensor))
             noise *= ~masks.bool()
 
             eval_step(

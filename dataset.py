@@ -183,12 +183,13 @@ def get_dloader(split, batch_size, data_dir="data", **kwargs):
     return dloader
 
 
+normalize = transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
 transform = transforms.Compose(
     [
         transforms.Resize(256, antialias=True),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
-        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        normalize,
     ]
 )
 normalize_inv = transforms.Compose(
@@ -205,12 +206,12 @@ totensor = transforms.Compose(
 )
 
 transform_shared = transforms.Compose(
-    [transforms.Resize(256, antialias=True), totensor]
+    [transforms.Resize(224, antialias=True), totensor]
 )
 
 transform_img = transforms.Compose(
     [
-        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        normalize,
     ]
 )
 
@@ -221,7 +222,7 @@ transform_shared_augment = transforms.Compose(
         transforms.RandomApply(
             [
                 transforms.RandomResizedCrop(
-                    256, scale=(0.3, 1), ratio=(3 / 4, 4 / 3), antialias=True
+                    224, scale=(0.3, 1), ratio=(3 / 4, 4 / 3), antialias=True
                 )
             ],
             p=0.3,
