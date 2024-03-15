@@ -1,4 +1,5 @@
 import os
+from random import randint
 
 import numpy as np
 import torch
@@ -70,7 +71,7 @@ class HWSetMasks(HWSet):
     """Dataset class for returning images with their segmentation masks."""
 
     def __init__(self, data_dir, split, transform_shared=None, transform_img=None):
-        super().__init__(data_dir, split, transform)
+        super().__init__(data_dir, split, None)
         self.transform_shared = transform_shared
         self.transform_img = transform_img
 
@@ -105,8 +106,34 @@ class HWSetMasks(HWSet):
         if self.transform_img is not None:
             img = self.transform_img(img)
 
-        return img, self.labels[item], mask
+        return img, self.labels[item], mask.bool()
 
+class HWSetNoise(HWSetMasks):
+    """Dataset class for returning images with their segmentation masks and background noise."""
+    def __init__(self, data_dir, split, transform_shared=None, transform_img=None, transform_noise=None):
+        super().__init__(data_dir, split, transform_shared=transform_shared, transform_img=transform_img)
+        self.transform_noise = transform_noise
+
+        self.train_noise_path = f"{self.data_dir}/train_noise.npy"
+        self.val_noise_path = f"{self.data_dir}/val_noise.npy"
+
+        if self.split == "val":
+            self.noise = np.load(self.val_noise_path)
+            self.noise_sampler = lambda item: self.noise[item]
+        elif self.split == "train":
+            self.noise = np.load(self.train_noise_path)
+            self.noise_sampler = lambda item: self.noise[randint(0, self.noise.shape[0] - 1)]
+    
+    def __getitem__(self, item):
+        img, label, mask = super().__getitem__(item)
+
+        noise = torch.from_numpy(self.noise_sampler(item) / 255).type(torch.FloatTensor)
+        
+        if self.transform_noise is not None:
+            noise = self.transform_noise(noise)
+        
+        return img, label, mask, noise
+        
 
 def pad_collate_fn(data):
     """
@@ -128,8 +155,6 @@ def pad_collate_fn(data):
     max_W = max(image.shape[2] for image in images)
 
     # Initialize tensors for batched data
-    batch_size = len(images)
-    n_channels = images[0].shape[0]
     batch_images = []
     batch_masks = []
 
@@ -147,8 +172,43 @@ def pad_collate_fn(data):
 
     return (torch.stack(batch_images), batch_labels, torch.stack(batch_masks))
 
+def pad_collate_fn_noise(data):
+    batch_images, batch_labels, batch_masks = pad_collate_fn([d[:3] for d in data])
+    batch_noise = torch.stack([d[-1] for d in data])
+    
+    H, W = batch_images.size()[-2:]
+    h_n, w_n = batch_noise.size()[-2:]
+    diff_h, diff_w = H - h_n, W - w_n
 
-def get_dloader(split, batch_size, data_dir="data", **kwargs):
+    padding = [0, 0, 0, 0]
+    if diff_w > 0:
+        pad_w = diff_w // 2
+        padding[0], padding[2] = pad_w + int(diff_w % 2), pad_w
+    elif diff_w < 0:
+        pad_w = abs(diff_w) // 2
+        batch_noise = batch_noise[...,pad_w:-pad_w - int(abs(diff_w) % 2)]
+    
+    if diff_h > 0:
+        pad_h = diff_h // 2
+        padding[1], padding[3] = pad_h + int(diff_h % 2), pad_h
+    elif diff_h < 0:
+        pad_h = abs(diff_h) // 2
+        batch_noise = batch_noise[...,pad_h:-pad_h - int(abs(diff_h) % 2), :]
+    
+    if any(padding):
+        batch_noise = pad(batch_noise, padding)
+    
+    return batch_images, batch_labels, batch_masks, batch_noise
+
+
+def get_dloader(split, batch_size, data_dir="data", noise=False, **kwargs):
+    if noise:
+        return get_dloader_noise(split, batch_size, data_dir=data_dir, **kwargs)
+    else:
+        return get_dloader_mask(split, batch_size, data_dir=data_dir, **kwargs)
+
+
+def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
     split = split.lower()
     shuffle = False
     if split == "train":
@@ -159,14 +219,7 @@ def get_dloader(split, batch_size, data_dir="data", **kwargs):
             transform_img=transform_img_augment,
         )
         shuffle = True
-    elif split == "val":
-        dset = HWSetMasks(
-            data_dir,
-            split,
-            transform_shared=transform_shared,
-            transform_img=transform_img,
-        )
-    elif split == "test":
+    else:
         dset = HWSetMasks(
             data_dir,
             split,
@@ -178,6 +231,36 @@ def get_dloader(split, batch_size, data_dir="data", **kwargs):
         batch_size=batch_size,
         shuffle=shuffle,
         collate_fn=pad_collate_fn,
+        **kwargs,
+    )
+    return dloader
+
+def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
+    split = split.lower()
+    shuffle = False
+    if split == "train":
+        dset = HWSetNoise(
+            data_dir,
+            split,
+            transform_shared=transform_shared_augment,
+            transform_img=transform_img_augment,
+            transform_noise=transform_noise_augment
+        )
+        shuffle = True
+    else:
+        dset = HWSetNoise(
+            data_dir,
+            split,
+            transform_shared=transform_shared,
+            transform_img=transform_img,
+            transform_noise=transform_noise
+        )
+
+    dloader = DataLoader(
+        dset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        collate_fn=pad_collate_fn_noise,
         **kwargs,
     )
     return dloader
@@ -236,7 +319,7 @@ transform_img_augment = transforms.Compose(
         transforms.RandomApply(
             [
                 transforms.ColorJitter(
-                    brightness=0.3, contrast=0.3, hue=0.3, saturation=0.3
+                    brightness=0.3, contrast=0.3, hue=0.1, saturation=0.3
                 )
             ],
             p=0.4,
@@ -249,5 +332,27 @@ transform_img_augment = transforms.Compose(
         #     p=0.05
         # ),
         transform_img,
+    ]
+)
+
+transform_noise = transforms.Compose(
+    [
+        normalize
+    ]
+)
+
+transform_noise_augment = transforms.Compose(
+    [
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomApply([transforms.RandomRotation(180, expand=False)], p=0.9),
+        transforms.RandomApply(
+            [
+                transforms.ColorJitter(
+                    brightness=1.0, contrast=0.5, hue=0.5, saturation=0.
+                )
+            ],
+            p=0.4,
+        ),
+        transform_noise
     ]
 )

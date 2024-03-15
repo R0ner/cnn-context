@@ -119,4 +119,4 @@ def get_rgb_fractal_noise(h, w, generator=None):
         [generate_fractal_noise_2d((h_gen, w_gen), (h_res, w_res), octaves, 0.5) for i in range(3)]
     )[:, :h, :w]
     
-    return noise
+    return (noise - noise.min()) / (noise.max() - noise.min())
