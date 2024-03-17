@@ -102,16 +102,31 @@ class HWSetMasks(HWSet):
 
         if self.transform_shared is not None:
             img, mask = self.transform_shared(img, mask)
+            mask = mask.bool()
 
         if self.transform_img is not None:
             img = self.transform_img(img)
 
-        return img, self.labels[item], mask.bool()
+        return img, self.labels[item], mask, None
+
 
 class HWSetNoise(HWSetMasks):
     """Dataset class for returning images with their segmentation masks and background noise."""
-    def __init__(self, data_dir, split, transform_shared=None, transform_img=None, transform_noise=None):
-        super().__init__(data_dir, split, transform_shared=transform_shared, transform_img=transform_img)
+
+    def __init__(
+        self,
+        data_dir,
+        split,
+        transform_shared=None,
+        transform_img=None,
+        transform_noise=None,
+    ):
+        super().__init__(
+            data_dir,
+            split,
+            transform_shared=transform_shared,
+            transform_img=transform_img,
+        )
         self.transform_noise = transform_noise
 
         self.train_noise_path = f"{self.data_dir}/train_noise.npy"
@@ -122,18 +137,20 @@ class HWSetNoise(HWSetMasks):
             self.noise_sampler = lambda item: self.noise[item]
         elif self.split == "train":
             self.noise = np.load(self.train_noise_path)
-            self.noise_sampler = lambda item: self.noise[randint(0, self.noise.shape[0] - 1)]
-    
+            self.noise_sampler = lambda item: self.noise[
+                randint(0, self.noise.shape[0] - 1)
+            ]
+
     def __getitem__(self, item):
-        img, label, mask = super().__getitem__(item)
+        img, label, mask, _ = super().__getitem__(item)
 
         noise = torch.from_numpy(self.noise_sampler(item) / 255).type(torch.FloatTensor)
-        
+
         if self.transform_noise is not None:
             noise = self.transform_noise(noise)
-        
+
         return img, label, mask, noise
-        
+
 
 def pad_collate_fn(data):
     """
@@ -172,10 +189,11 @@ def pad_collate_fn(data):
 
     return (torch.stack(batch_images), batch_labels, torch.stack(batch_masks))
 
+
 def pad_collate_fn_noise(data):
     batch_images, batch_labels, batch_masks = pad_collate_fn([d[:3] for d in data])
     batch_noise = torch.stack([d[-1] for d in data])
-    
+
     H, W = batch_images.size()[-2:]
     h_n, w_n = batch_noise.size()[-2:]
     diff_h, diff_w = H - h_n, W - w_n
@@ -186,18 +204,18 @@ def pad_collate_fn_noise(data):
         padding[0], padding[2] = pad_w + int(diff_w % 2), pad_w
     elif diff_w < 0:
         pad_w = abs(diff_w) // 2
-        batch_noise = batch_noise[...,pad_w:-pad_w - int(abs(diff_w) % 2)]
-    
+        batch_noise = batch_noise[..., pad_w : -pad_w - int(abs(diff_w) % 2)]
+
     if diff_h > 0:
         pad_h = diff_h // 2
         padding[1], padding[3] = pad_h + int(diff_h % 2), pad_h
     elif diff_h < 0:
         pad_h = abs(diff_h) // 2
-        batch_noise = batch_noise[...,pad_h:-pad_h - int(abs(diff_h) % 2), :]
-    
+        batch_noise = batch_noise[..., pad_h : -pad_h - int(abs(diff_h) % 2), :]
+
     if any(padding):
         batch_noise = pad(batch_noise, padding)
-    
+
     return batch_images, batch_labels, batch_masks, batch_noise
 
 
@@ -224,7 +242,7 @@ def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
             data_dir,
             split,
             transform_shared=transform_shared,
-            transform_img=transform_img,
+            transform_img=None,
         )
     dloader = DataLoader(
         dset,
@@ -235,6 +253,7 @@ def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
     )
     return dloader
 
+
 def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
     split = split.lower()
     shuffle = False
@@ -244,7 +263,7 @@ def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
             split,
             transform_shared=transform_shared_augment,
             transform_img=transform_img_augment,
-            transform_noise=transform_noise_augment
+            transform_noise=transform_noise_augment,
         )
         shuffle = True
     else:
@@ -252,8 +271,8 @@ def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
             data_dir,
             split,
             transform_shared=transform_shared,
-            transform_img=transform_img,
-            transform_noise=transform_noise
+            transform_img=None,
+            transform_noise=None,
         )
 
     dloader = DataLoader(
@@ -266,23 +285,36 @@ def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
     return dloader
 
 
-normalize = transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+normc_imgnet = {"mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225)}
+normc_hw = {"mean": (0.453, 0.444, 0.405), "std": (0.258, 0.256, 0.270)}
+normc_hw_mask = {"mean": (0.495, 0.467, 0.435), "std": (0.250, 0.247, 0.246)}
+
+normalize_imgnet = transforms.Normalize(**normc_imgnet)
+normalize_hw = transforms.Normalize(**normc_hw)
+normalize_hw_mask = transforms.Normalize(**normc_hw_mask)
+
+get_normalize_inv = lambda normc: transforms.Compose(
+    [
+        transforms.Normalize(
+            mean=(0.0, 0.0, 0.0), std=(1 / normc['std'][0], 1 / normc['std'][1], 1 / normc['std'][2])
+        ),
+        transforms.Normalize(mean=(-normc['mean'][0], -normc['mean'][1], -normc['mean'][2]), std=(1.0, 1.0, 1.0)),
+    ]
+)
+
+normalize_inv_imgnet = get_normalize_inv(normc_imgnet)
+normalize_inv_hw = get_normalize_inv(normc_hw)
+normalize_inv_hw_mask = get_normalize_inv(normc_hw_mask)
+
 transform = transforms.Compose(
     [
         transforms.Resize(256, antialias=True),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
-        normalize,
+        normalize_imgnet,
     ]
 )
-normalize_inv = transforms.Compose(
-    [
-        transforms.Normalize(
-            mean=(0.0, 0.0, 0.0), std=(1 / 0.229, 1 / 0.224, 1 / 0.225)
-        ),
-        transforms.Normalize(mean=(-0.485, -0.456, -0.406), std=(1.0, 1.0, 1.0)),
-    ]
-)  # For visualization purposes.
+
 
 totensor = transforms.Compose(
     [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]
@@ -292,11 +324,11 @@ transform_shared = transforms.Compose(
     [transforms.Resize(224, antialias=True), totensor]
 )
 
-transform_img = transforms.Compose(
-    [
-        normalize,
-    ]
-)
+# transform_img = transforms.Compose(
+#     [
+#         normalize,
+#     ]
+# )
 
 transform_shared_augment = transforms.Compose(
     [
@@ -331,15 +363,11 @@ transform_img_augment = transforms.Compose(
         #     ],
         #     p=0.05
         # ),
-        transform_img,
+        # transform_img,
     ]
 )
 
-transform_noise = transforms.Compose(
-    [
-        normalize
-    ]
-)
+# transform_noise = transforms.Compose([])
 
 transform_noise_augment = transforms.Compose(
     [
@@ -348,11 +376,11 @@ transform_noise_augment = transforms.Compose(
         transforms.RandomApply(
             [
                 transforms.ColorJitter(
-                    brightness=1.0, contrast=0.5, hue=0.5, saturation=0.
+                    brightness=1.0, contrast=0.5, hue=0.5, saturation=0.0
                 )
             ],
             p=0.4,
         ),
-        transform_noise
+        # transform_noise,
     ]
 )

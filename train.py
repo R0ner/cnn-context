@@ -10,7 +10,7 @@ from torchvision.models import resnet18, resnet50
 from tqdm import tqdm
 
 import wandb
-from dataset import get_dloader, normalize
+from dataset import get_dloader, normalize_hw, normalize_hw_mask
 from perlin import get_rgb_fractal_noise
 from util import (DummyModel, EarlyStopper, eval_step, get_performance,
                   train_step)
@@ -132,8 +132,8 @@ if __name__ == "__main__":
     earlystopper_b = EarlyStopper(mode="min", patience=patience)
     earlystopper_c = EarlyStopper(mode="min", patience=patience)
 
-    trainloader = get_dloader("train", batch_size, num_workers=num_workers)
-    valloader = get_dloader("val", batch_size=1, num_workers=num_workers)
+    trainloader = get_dloader("train", batch_size=batch_size, noise=True, num_workers=num_workers)
+    valloader = get_dloader("val", batch_size=1, noise=True, num_workers=num_workers)
 
     # WandB
     if use_wandb:
@@ -187,17 +187,10 @@ if __name__ == "__main__":
         model_a.train()
         model_b.train()
         model_c.train()
-        for imgs, labels, masks in tqdm(trainloader):
-            # noise = torch.randn(
-            #     imgs.size(),
-            # )
-            # noise = normalize(torch.rand(imgs.size()))
-            noise = normalize(torch.from_numpy(np.stack([get_rgb_fractal_noise(*imgs.size()[-2:]) for _ in range(imgs.size(0))])).type(torch.FloatTensor))
-            noise *= ~masks.bool()
-
+        for imgs, labels, masks, noise in tqdm(trainloader):
             train_step(
                 model_a,
-                imgs,
+                normalize_hw(imgs),
                 labels,
                 optimizer_a,
                 criterion,
@@ -206,7 +199,7 @@ if __name__ == "__main__":
             )
             train_step(
                 model_b,
-                imgs * masks,
+                normalize_hw_mask(imgs) * masks,
                 labels,
                 optimizer_b,
                 criterion,
@@ -215,7 +208,7 @@ if __name__ == "__main__":
             )
             train_step(
                 model_c,
-                imgs * masks + noise,
+                normalize_hw_mask(imgs * masks + noise * (~masks)),
                 labels,
                 optimizer_c,
                 criterion,
@@ -231,16 +224,10 @@ if __name__ == "__main__":
         # # Ensure the same "random" noise every time.
         # gen = torch.Generator()
         # gen.manual_seed(seed)
-        gen = iter(range(len(valloader.dataset) * 10))
-        for imgs, labels, masks in tqdm(valloader):
-            # noise = torch.randn(imgs.size(), generator=gen)
-            # noise = normalize(torch.rand(imgs.size(), generator=gen))
-            noise = normalize(torch.from_numpy(np.stack([get_rgb_fractal_noise(*imgs.size()[-2:], gen) for _ in range(imgs.size(0))])).type(torch.FloatTensor))
-            noise *= ~masks.bool()
-
+        for imgs, labels, masks, noise in tqdm(valloader):
             eval_step(
                 model_a,
-                imgs,
+                normalize_hw(imgs),
                 labels,
                 masks,
                 criterion,
@@ -249,7 +236,7 @@ if __name__ == "__main__":
             )
             eval_step(
                 model_b,
-                imgs * masks,
+                normalize_hw_mask(imgs) * masks,
                 labels,
                 masks,
                 criterion,
@@ -258,7 +245,7 @@ if __name__ == "__main__":
             )
             eval_step(
                 model_c,
-                imgs * masks + noise,
+                normalize_hw_mask(imgs * masks + noise * (~masks)),
                 labels,
                 masks,
                 criterion,
