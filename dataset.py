@@ -76,6 +76,7 @@ class HWSetMasks(HWSet):
         self.transform_img = transform_img
 
         self.val_mask_dir = f"{self.val_img_dir}_masks"
+        self.test_mask_dir = f"{self.test_img_dir}_masks"
         self.train_mask_dirs = [f"{img_dir}_masks" for img_dir in self.train_img_dirs]
         if self.split == "val":
             self.masks = [
@@ -131,9 +132,13 @@ class HWSetNoise(HWSetMasks):
 
         self.train_noise_path = f"{self.data_dir}/train_noise.npy"
         self.val_noise_path = f"{self.data_dir}/val_noise.npy"
+        self.test_noise_path = f"{self.data_dir}/test_noise.npy"
 
         if self.split == "val":
             self.noise = np.load(self.val_noise_path)
+            self.noise_sampler = lambda item: self.noise[item]
+        elif self.split == "test":
+            self.noise = np.load(self.test_noise_path)
             self.noise_sampler = lambda item: self.noise[item]
         elif self.split == "train":
             self.noise = np.load(self.train_noise_path)
