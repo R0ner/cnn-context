@@ -2,6 +2,8 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
+from model import resnet_forward_features
+
 
 class EarlyStopper:
     def __init__(self, mode="min", patience=5) -> None:
@@ -46,39 +48,67 @@ class DummyModel:
     def eval(self) -> None:
         pass
 
-def train_step(model, imgs, labels, optimizer, criterion, device="cpu", metrics=None):
+def train_step(model, imgs, labels, optimizer, criterion, masks=None, device="cpu", metrics=None, return_features=False):
     if isinstance(model, DummyModel):
         return
     
     optimizer.zero_grad()
-    out = model(imgs.to(device))
+    
+    if return_features:
+        out = resnet_forward_features(model, imgs.to(device))
+        loss, loss_ce = criterion(out, labels.type(torch.LongTensor).to(device), masks.to(device))
+        out = out[-1]
+    else:
+        out = model(imgs.to(device))
+        loss = criterion(out, labels.type(torch.LongTensor).to(device))
 
-    loss = criterion(out, labels.type(torch.LongTensor).to(device))
     loss.backward()
 
     optimizer.step()
 
-    optimizer.zero_grad()
-
+    loss_features = 0
+    if return_features:
+        loss_total = loss.cpu().detach().item()
+        loss_ce = loss_ce.cpu().detach().item()
+        loss_features = loss_total - loss_ce
+    else:
+        loss_ce = loss.cpu().detach().item()
+        loss_total = loss_ce
+    
     if metrics is not None:
         with torch.no_grad():
             score, indices = torch.max(out.cpu(), 1)
-            metrics["loss"].append(loss.cpu().detach().item())
+            metrics["loss_total"].append(loss_total)
+            metrics["loss_ce"].append(loss_ce)
+            metrics["loss_features"].append(loss_features)
             metrics["preds"].append(indices.detach().numpy())
             metrics["scores"].append(score.detach().numpy())
             metrics["labels"].append(labels.numpy())
 
 
-def eval_step(model, imgs, labels, masks, criterion, device="cpu", metrics=None):
+def eval_step(model, imgs, labels, masks, criterion, device="cpu", metrics=None, return_features=False):
     if metrics is None or isinstance(model, DummyModel):
         return
 
     slc, score, indices, out = get_saliency(model, imgs, device=device)
     obj_score = get_obj_score(slc, masks)
+    
+    loss_features = 0
     with torch.no_grad():
-        loss = criterion(out, labels.type(torch.LongTensor))
+        if not return_features:
+            loss_ce = criterion(out, labels.type(torch.LongTensor))
+            loss_ce = loss_ce.cpu().detach().item()
+            loss_total = loss_ce
+        else:
+            out = resnet_forward_features(model, imgs.to(device))
+            loss_total, loss_ce = criterion(out, labels.type(torch.LongTensor).to(device), masks.to(device))
+            loss_total = loss_total.cpu().detach().item()
+            loss_ce = loss_ce.cpu().detach().item()
+            loss_features = loss_total - loss_ce
 
-    metrics["loss"].append(loss.cpu().detach().item())
+    metrics["loss_total"].append(loss_total)
+    metrics["loss_ce"].append(loss_ce)
+    metrics["loss_features"].append(loss_features)
     metrics["preds"].append(indices.detach().numpy())
     metrics["scores"].append(score.detach().numpy())
     metrics["labels"].append(labels.numpy())
@@ -131,7 +161,9 @@ def get_saliency(model, imgs, device="cpu"):
 
 def get_performance(metrics: dict[list]) -> dict[float]:
     performance = {}
-    performance["mean_loss"] = np.mean(metrics["loss"]).item()
+    for metric in metrics:
+        if "loss" in metric:
+            performance[f"mean_{metric}"] = np.mean(metrics[metric]).item()
     performance["accuracy"] = np.mean(
         np.concatenate(metrics["preds"]) == np.concatenate(metrics["labels"])
     ).item()

@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 import wandb
 from dataset import get_dloader, normalize_hw, normalize_hw_mask
+from loss import SuperpixelCriterion
 from perlin import get_rgb_fractal_noise
 from util import (DummyModel, EarlyStopper, eval_step, get_performance,
                   train_step)
@@ -41,6 +42,9 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lr", default=1e-3, type=float)
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--epochs", default=1000, type=int)
+
+    # Custom loss function
+    parser.add_argument("--sp_loss", action="store_true")
 
     # Model parameters
     parser.add_argument(
@@ -92,6 +96,9 @@ if __name__ == "__main__":
     # Use wandb
     use_wandb = args.wandb
 
+    # Use sp loss
+    sp_loss = args.sp_loss
+
     save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
     save_dir_a = f"{save_dir}/a"
     save_dir_b = f"{save_dir}/b"
@@ -109,7 +116,10 @@ if __name__ == "__main__":
     model_c = get_model(model_type, device=device, seed=seed)
 
     # Loss function
-    criterion = torch.nn.CrossEntropyLoss()
+    if not sp_loss:
+        criterion = torch.nn.CrossEntropyLoss()
+    else:
+        criterion = SuperpixelCriterion(model_type, device=device)
 
     # Optimizers
     optimizer_a = torch.optim.Adam(model_a.parameters(), lr=lr)
@@ -153,33 +163,29 @@ if __name__ == "__main__":
 
     best = {name: float("inf") for name in names}
 
+    metrics_train_dict = lambda: {
+        "loss_total": [], 
+        "loss_ce": [], 
+        "loss_features": [], 
+        "preds": [], 
+        "scores": [], 
+        "labels": []
+    }
+    
+    metrics_val_dict = lambda: {
+        **metrics_train_dict(),
+        "obj_scores": []
+    }
+
     # Training loop
     print(f"Start training with model type: {model_type}")
     for epoch in range(n_epochs):
-        metrics_train_a = {"loss": [], "preds": [], "scores": [], "labels": []}
-        metrics_train_b = {"loss": [], "preds": [], "scores": [], "labels": []}
-        metrics_train_c = {"loss": [], "preds": [], "scores": [], "labels": []}
-        metrics_val_a = {
-            "loss": [],
-            "preds": [],
-            "scores": [],
-            "labels": [],
-            "obj_scores": [],
-        }
-        metrics_val_b = {
-            "loss": [],
-            "preds": [],
-            "scores": [],
-            "labels": [],
-            "obj_scores": [],
-        }
-        metrics_val_c = {
-            "loss": [],
-            "preds": [],
-            "scores": [],
-            "labels": [],
-            "obj_scores": [],
-        }
+        metrics_train_a = metrics_train_dict()
+        metrics_train_b = metrics_train_dict()
+        metrics_train_c = metrics_train_dict()
+        metrics_val_a = metrics_val_dict()
+        metrics_val_b = metrics_val_dict()
+        metrics_val_c = metrics_val_dict()
 
         print(f"Epoch {epoch}")
 
@@ -194,8 +200,10 @@ if __name__ == "__main__":
                 labels,
                 optimizer_a,
                 criterion,
+                masks=masks,
                 device=device,
                 metrics=metrics_train_a,
+                return_features=sp_loss
             )
             train_step(
                 model_b,
@@ -203,8 +211,10 @@ if __name__ == "__main__":
                 labels,
                 optimizer_b,
                 criterion,
+                masks=masks,
                 device=device,
                 metrics=metrics_train_b,
+                return_features=sp_loss
             )
             train_step(
                 model_c,
@@ -212,8 +222,10 @@ if __name__ == "__main__":
                 labels,
                 optimizer_c,
                 criterion,
+                masks=masks,
                 device=device,
                 metrics=metrics_train_c,
+                return_features=sp_loss
             )
 
         # Val
@@ -221,9 +233,6 @@ if __name__ == "__main__":
         model_b.eval()
         model_c.eval()
 
-        # # Ensure the same "random" noise every time.
-        # gen = torch.Generator()
-        # gen.manual_seed(seed)
         for imgs, labels, masks, noise in tqdm(valloader):
             eval_step(
                 model_a,
@@ -233,6 +242,7 @@ if __name__ == "__main__":
                 criterion,
                 device=device,
                 metrics=metrics_val_a,
+                return_features=sp_loss
             )
             eval_step(
                 model_b,
@@ -242,6 +252,7 @@ if __name__ == "__main__":
                 criterion,
                 device=device,
                 metrics=metrics_val_b,
+                return_features=sp_loss
             )
             eval_step(
                 model_c,
@@ -251,6 +262,7 @@ if __name__ == "__main__":
                 criterion,
                 device=device,
                 metrics=metrics_val_c,
+                return_features=sp_loss
             )
         # Calculate performance metrics
         log_stats = dict()
@@ -277,11 +289,11 @@ if __name__ == "__main__":
                 performance_train = get_performance(metrics_train)
                 performance_val = get_performance(metrics_val)
 
-                print(performance_train)
-                print(performance_val)
+                print(f'Train performance: {performance_train}')
+                print(f'Val performance: {performance_val}')
 
-                lr_scheduler.step(performance_val["mean_loss"])
-                stop[name] = earlystopper(performance_val["mean_loss"])
+                lr_scheduler.step(performance_val["mean_loss_total"])
+                stop[name] = earlystopper(performance_val["mean_loss_total"])
 
                 log_stats = (
                     log_stats
@@ -291,11 +303,11 @@ if __name__ == "__main__":
                 )
 
                 if (
-                    performance_val["mean_loss"] < best[name]
+                    performance_val["mean_loss_total"] < best[name]
                     and (epoch + 1) > save_every
                 ):
                     suffix[name] = "_best"
-            best[name] = min(best[name], performance_val["mean_loss"])
+            best[name] = min(best[name], performance_val["mean_loss_total"])
 
         # Track stats
         all_stats[epoch] = log_stats
