@@ -136,15 +136,19 @@ class HWSetNoise(HWSetMasks):
 
         if self.split == "val":
             self.noise = np.load(self.val_noise_path)
-            self.noise_sampler = lambda item: self.noise[item]
+            self.noise_sampler = self.sampler
         elif self.split == "test":
             self.noise = np.load(self.test_noise_path)
-            self.noise_sampler = lambda item: self.noise[item]
+            self.noise_sampler = self.sampler
         elif self.split == "train":
             self.noise = np.load(self.train_noise_path)
-            self.noise_sampler = lambda item: self.noise[
-                randint(0, self.noise.shape[0] - 1)
-            ]
+            self.noise_sampler = self.rand_sampler
+    
+    def sampler(self, item):
+        return self.noise[item]
+    
+    def rand_sampler(self, item):
+        return self.noise[randint(0, self.noise.shape[0] - 1)]
 
     def __getitem__(self, item):
         img, label, mask, _ = super().__getitem__(item)
@@ -170,7 +174,7 @@ def pad_collate_fn(data):
             - 'labels': A tensor of shape [batch_size]
             - 'masks': A tensor of shape [batch_size, C, max_H, max_W]
     """
-    images, labels, masks = zip(*data)
+    images, labels, masks = zip(*[d[:3] for d in data])
 
     # Determine the maximum height and width in the batch
     max_H = max(image.shape[1] for image in images)
@@ -196,7 +200,7 @@ def pad_collate_fn(data):
 
 
 def pad_collate_fn_noise(data):
-    batch_images, batch_labels, batch_masks = pad_collate_fn([d[:3] for d in data])
+    batch_images, batch_labels, batch_masks = pad_collate_fn(data)
     batch_noise = torch.stack([d[-1] for d in data])
 
     H, W = batch_images.size()[-2:]
