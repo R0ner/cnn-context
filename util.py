@@ -118,15 +118,15 @@ def eval_step(model, imgs, labels, masks, criterion, device="cpu", metrics=None,
 def get_obj_score(slc, masks):
     mask = masks[0, 0].numpy().astype(bool)
 
-    area = mask.shape[0] * mask.shape[1]
-    obj_area = mask.sum()
+    N = mask.shape[0] * mask.shape[1]
+    N_obj = mask.sum()
+    N_bg = N - N_obj
 
-    obj_frac = area / obj_area
-    bg_frac = area / (area - obj_area)
+    slc_abs = np.abs(slc)
 
-    obj_slc_score = np.abs(slc)[mask].sum()
-    obj_score = (obj_slc_score * obj_frac) / (
-        obj_slc_score * obj_frac + (np.abs(slc).sum() - obj_slc_score) * bg_frac
+    obj_slc_score = slc_abs[mask].sum() / N_obj
+    obj_score = obj_slc_score / (
+        obj_slc_score + (slc_abs.sum() - obj_slc_score) / N_bg
     )
     return obj_score
 
