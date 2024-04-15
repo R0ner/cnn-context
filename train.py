@@ -55,6 +55,9 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lr_patience", default=20, type=int)
     parser.add_argument("--patience", default=40, type=int)
 
+    # Multiprocessing
+    parser.add_argument("--num_workers", default=0, type=int)
+
     # weights and biases
     parser.add_argument("--wandb", action="store_true")
     return parser
@@ -75,7 +78,7 @@ if __name__ == "__main__":
 
     # Data
     batch_size = args.batch_size
-    num_workers = 0
+    num_workers = args.num_workers
 
     # Optimizer
     lr = args.lr
