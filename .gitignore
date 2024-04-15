@@ -162,3 +162,5 @@ cython_debug/
 # Folders
 data/
 models/
+wandb/
+job_info/
