@@ -126,7 +126,7 @@ def get_obj_score(slc, masks):
 
     obj_slc_score = slc_abs[mask].sum() / N_obj
     obj_score = obj_slc_score / (
-        obj_slc_score + (slc_abs.sum() - obj_slc_score) / N_bg
+        obj_slc_score + slc_abs[~mask].sum() / N_bg
     )
     return obj_score
 
