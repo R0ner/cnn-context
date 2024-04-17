@@ -12,24 +12,51 @@ from torchvision.transforms.v2 import functional as F
 from torchvision.transforms.v2.functional._color import _max_value
 
 
-class RandomAxisFlip(nn.Module):
+class MultiTransform(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def transform_(self, volume: Any, *args) -> Any:
+        return volume
+
+    def get_args_(self) -> tuple:
+        return tuple()
+
+    def transform(self, inpt: Any) -> Any:
+        args = self.get_args_()
+        if len(inpt) > 1:
+            return tuple([self.transform_(vol, *args) for vol in inpt])
+        else:
+            return self.transform_(*inpt, *args)
+
+    def forward(self, *inpt: Any) -> Any:
+        return self.transform(inpt)
+
+
+class ToTensor(MultiTransform):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def transform_(self, volume: Any) -> Any:
+        return totensor(volume)
+
+
+class RandomAxisFlip(MultiTransform):
     def __init__(self, axis: int) -> None:
         super().__init__()
         self.axis = axis
 
-    def forward(self, inpt: Any) -> Any:
-        return randomaxisflip(inpt, self.axis)
+    def transform_(self, volume: Any, flip: bool) -> Any:
+        if flip:
+            return axisflip(volume, self.axis)
+        else:
+            return volume
+
+    def get_args_(self) -> tuple:
+        return (choice([True, False]),)
 
 
-class ToTensor(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-
-    def forward(self, inpt: Any) -> Any:
-        return totensor(inpt)
-
-
-class IntensityJitter(nn.Module):
+class IntensityJitter(MultiTransform):
     def __init__(
         self,
         brightness: Union[float, Tuple[float, float]] = 0,
@@ -38,7 +65,7 @@ class IntensityJitter(nn.Module):
         super().__init__()
         self.brightness = self.to_factors(brightness, center=0)
         self.contrast = self.to_factors(contrast, center=1)
-
+    
     @staticmethod
     def to_factors(value, center=0):
         if isinstance(value, float):
@@ -48,55 +75,39 @@ class IntensityJitter(nn.Module):
         else:
             raise TypeError
 
-    @staticmethod
-    def get_params(
-        brightness: Optional[List[float]], contrast: Optional[List[float]]
-    ) -> Tuple[torch.Tensor, Optional[float], Optional[float]]:
-        """Get the parameters for the randomized transform to be applied on image.
-
-        Args:
-            brightness (tuple of float (min, max), optional): The range from which the brightness_factor is chosen
-                uniformly. Pass None to turn off the transformation.
-            contrast (tuple of float (min, max), optional): The range from which the contrast_factor is chosen
-                uniformly. Pass None to turn off the transformation.
-
+    def get_args_(self) -> Tuple[torch.Tensor, Optional[float], Optional[float]]:
+        """
         Returns:
-            tuple: The parameters used to apply the randomized transform
-            along with their random order.
+            fn_idx: The random order in which to apply brightness and contrast adjustments.
+            b: The magnitude of the brightness adjustment.
+            c: The magnitude of the contrast adjustment.
         """
         fn_idx = torch.randperm(2)
 
         b = (
             None
-            if brightness is None
-            else float(torch.empty(1).uniform_(brightness[0], brightness[1]))
+            if self.brightness is None
+            else float(torch.empty(1).uniform_(self.brightness[0], self.brightness[1]))
         )
         c = (
             None
-            if contrast is None
-            else float(torch.empty(1).uniform_(contrast[0], contrast[1]))
+            if self.contrast is None
+            else float(torch.empty(1).uniform_(self.contrast[0], self.contrast[1]))
         )
 
         return fn_idx, b, c
-
-    def forward(self, inpt: Any) -> Any:
-        fn_idx, brightness_factor, contrast_factor = self.get_params(
-            self.brightness, self.contrast
-        )
-
+    
+    def transform_(self, volume, fn_idx, brightness_factor, contrast_factor):
         for fn_id in fn_idx:
             if fn_id == 0 and brightness_factor is not None:
-                inpt = adjust_brightness(inpt, brightness_factor)
+                volume = adjust_brightness(volume, brightness_factor)
             elif fn_id == 1 and contrast_factor is not None:
-                inpt = adjust_contrast(inpt, contrast_factor)
+                volume = adjust_contrast(volume, contrast_factor)
+        return volume
 
-        return inpt
 
-
-class RollJitter(nn.Module):
-    def __init__(
-        self, shifts: Union[int, tuple[int]], dims: Union[int, tuple[int]]
-    ) -> None:
+class RollJitter(MultiTransform):
+    def __init__(self, shifts: Union[int, tuple[int]], dims: Union[int, tuple[int]]) -> None:
         super().__init__()
         self.dims = dims
         self.shifts = shifts
@@ -110,49 +121,50 @@ class RollJitter(nn.Module):
             self.shifts
         ), f"'dims' and 'shifts' should match, but got shifts='{self.shifts}' and dims='{self.dims}'"
 
-    def forward(self, inpt: Any) -> Any:
-        shifts = tuple([randint(-shift, shift) for shift in self.shifts])
-        return torch.roll(inpt, shifts=shifts, dims=self.dims)
+    def get_args_(self) -> Tuple:
+        return (tuple([randint(-shift, shift) for shift in self.shifts]), )
+    
+    def transform_(self, volume: Any, shifts: tuple[int]) -> Any:
+        return torch.roll(volume, shifts=shifts, dims=self.dims)
 
 
-class RandomRotation(nn.Module):
+class RandomRotation(MultiTransform):
     def __init__(self, angles: tuple[float], **kwargs) -> None:
         super().__init__()
         self.angles = angles
         self.kwargs = kwargs
 
-    def forward(self, inpt: Any) -> Any:
-        inpt = inpt.numpy()
-        angles = tuple([uniform(-angle, angle) for angle in self.angles])
+    def get_args_(self) -> Tuple:
+        return (tuple([uniform(-angle, angle) for angle in self.angles]), )
+    
+    def transform_(self, volume: Any, angles: tuple[float]):
+        volume = volume.numpy()
         for angle, axes in zip(angles, ((-3, -2), (-3, -1), (-2, -1))):
             if abs(angle) > 1e-4:
-                inpt = rotate(inpt, angle, axes, reshape=False, **self.kwargs)
-        return torch.from_numpy(inpt)
+                volume = rotate(volume, angle, axes, reshape=False, **self.kwargs)
+        return torch.from_numpy(volume)
 
 
-class Standardize(nn.Module):
+class Standardize(MultiTransform):
     def __init__(self, mean, std) -> None:
         super().__init__()
         self.mean = mean
         self.std = std
 
-    def forward(self, inpt: Any) -> Any:
-        return (inpt - self.mean) / self.std
+    def transform_(self, volume: Any) -> Any:
+        return (volume - self.mean) / self.std
 
 
 class StandardizeInv(Standardize):
     def __init__(self, mean, std) -> None:
         super().__init__(mean, std)
 
-    def forward(self, inpt: Any) -> Any:
-        return inpt * self.std + self.mean
+    def transform_(self, volume: Any) -> Any:
+        return volume * self.std + self.mean
 
 
-def randomaxisflip(volume: torch.Tensor, axis: int) -> torch.Tensor:
-    if choice([True, False]):
-        return torch.flip(volume, (axis - 3,))
-    else:
-        return volume
+def axisflip(volume: torch.Tensor, axis: int) -> torch.Tensor:
+    return torch.flip(volume, (axis - 3,))
 
 
 def totensor(inpt: Union[np.array, torch.Tensor]) -> torch.Tensor:

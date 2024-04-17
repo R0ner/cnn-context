@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
 name_legend = {
     "ac": "brown_cricket",
@@ -16,6 +17,7 @@ name_legend = {
 }
 
 def show_volume(volume, label=None, size=1, **kwargs):
+    volume = np.squeeze(volume)
     fig, (ax0, ax1, ax2) = plt.subplots(1, 3, figsize=(size * 6, size * 3), tight_layout=True)
     if label is not None:
         fig.suptitle(list(name_legend.values())[label].replace("_", " "))

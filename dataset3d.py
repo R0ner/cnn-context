@@ -22,15 +22,15 @@ class BNSet(Dataset):
         self.volumes = []
         self.labels = []
         if self.split == "train":
-            for idx, name in enumerate(os.listdir(self.train_dir)):
-                if self.subset is not None and name.lower() not in subset:
+            for idx, name in enumerate(sorted(os.listdir(self.train_dir))):
+                if self.subset is not None and name.lower() not in self.subset:
                     continue
                 bug_paths = list(
                     filter(
                         lambda f: f.endswith(".tif"),
                         map(
                             lambda file: f"{self.train_dir}/{name}/{file}",
-                            os.listdir(f"{self.train_dir}/{name}"),
+                            sorted(os.listdir(f"{self.train_dir}/{name}")),
                         ),
                     )
                 )
@@ -52,5 +52,48 @@ class BNSet(Dataset):
         if self.transform is not None:
             volume = self.transform(volume)
 
-        return (volume, self.labels[item])
+        return volume, self.labels[item]
 
+
+class BNSetMasks(BNSet):
+    def __init__(self, data_dir, split, subset=None, transform_shared=None, transform_vol=None):
+        super().__init__(data_dir, split, subset, None)
+        self.transform_shared = transform_shared
+        self.transform_vol = transform_vol
+        
+        self.val_mask_dir = f"{self.data_dir}/validation_mask"
+        self.test_mask_dir = f"{self.data_dir}/test_mask"
+        self.train_mask_dir = f"{self.data_dir}/train_mask"
+
+        self.masks = []
+        if self.split == "train":
+            for idx, name in enumerate(sorted(os.listdir(self.train_mask_dir))):
+                if self.subset is not None and name.lower() not in self.subset:
+                    continue
+                mask_paths = list(
+                    filter(
+                        lambda f: f.endswith(".tif"),
+                        map(
+                            lambda file: f"{self.train_mask_dir}/{name}/{file}",
+                            sorted(os.listdir(f"{self.train_mask_dir}/{name}")),
+                        ),
+                    )
+                )
+                self.masks.extend(mask_paths)
+        elif self.split == "val":
+            raise NotImplementedError
+        elif self.split == "test":
+            raise NotImplementedError
+        
+    def __getitem__(self, item):
+        volume = imread(self.volumes[item])[np.newaxis]
+        mask = imread(self.masks[item])[np.newaxis].astype(np.uint8)
+
+        if self.transform_shared is not None:
+            volume, mask = self.transform_shared(volume, mask)
+            mask = mask.bool()
+
+        if self.transform_vol is not None:
+            volume = self.transform_vol(volume)
+        
+        return volume, self.labels[item], mask
