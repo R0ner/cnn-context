@@ -1,11 +1,12 @@
 import os
-from random import choice, randint
+from random import choice, randint, uniform
 from typing import (Any, Callable, Dict, List, Literal, Optional, Sequence,
                     Tuple, Type, Union)
 
 import numpy as np
 import torch
 import torchvision.transforms.v2 as transforms
+from scipy.ndimage import rotate
 from torch import nn
 from torchvision.transforms.v2 import functional as F
 from torchvision.transforms.v2.functional._color import _max_value
@@ -88,24 +89,64 @@ class IntensityJitter(nn.Module):
                 inpt = adjust_brightness(inpt, brightness_factor)
             elif fn_id == 1 and contrast_factor is not None:
                 inpt = adjust_contrast(inpt, contrast_factor)
-        
+
         return inpt
 
 
 class RollJitter(nn.Module):
-    def __init__(self, shifts: Union[int, tuple[int]],  dims: Union[int, tuple[int]]) -> None:
+    def __init__(
+        self, shifts: Union[int, tuple[int]], dims: Union[int, tuple[int]]
+    ) -> None:
         super().__init__()
+        self.dims = dims
+        self.shifts = shifts
+
         if isinstance(dims, int):
-            self.dims = (dims, )
+            self.dims = (dims,)
         if isinstance(shifts, int):
             self.shifts = tuple(len(self.dims) * [shifts])
 
-        assert len(self.dims) == len(self.shifts), f"'dims' and 'shifts' should match, but got shifts='{self.shifts}' and dims='{self.dims}'" 
-    
+        assert len(self.dims) == len(
+            self.shifts
+        ), f"'dims' and 'shifts' should match, but got shifts='{self.shifts}' and dims='{self.dims}'"
+
     def forward(self, inpt: Any) -> Any:
-        shifts = tuple([randint(0, shift) for shift in self.shifts])
+        shifts = tuple([randint(-shift, shift) for shift in self.shifts])
         return torch.roll(inpt, shifts=shifts, dims=self.dims)
-            
+
+
+class RandomRotation(nn.Module):
+    def __init__(self, angles: tuple[float], **kwargs) -> None:
+        super().__init__()
+        self.angles = angles
+        self.kwargs = kwargs
+
+    def forward(self, inpt: Any) -> Any:
+        inpt = inpt.numpy()
+        angles = tuple([uniform(-angle, angle) for angle in self.angles])
+        for angle, axes in zip(angles, ((-3, -2), (-3, -1), (-2, -1))):
+            if abs(angle) > 1e-4:
+                inpt = rotate(inpt, angle, axes, reshape=False, **self.kwargs)
+        return torch.from_numpy(inpt)
+
+
+class Standardize(nn.Module):
+    def __init__(self, mean, std) -> None:
+        super().__init__()
+        self.mean = mean
+        self.std = std
+
+    def forward(self, inpt: Any) -> Any:
+        return (inpt - self.mean) / self.std
+
+
+class StandardizeInv(Standardize):
+    def __init__(self, mean, std) -> None:
+        super().__init__(mean, std)
+
+    def forward(self, inpt: Any) -> Any:
+        return inpt * self.std + self.mean
+
 
 def randomaxisflip(volume: torch.Tensor, axis: int) -> torch.Tensor:
     if choice([True, False]):
@@ -121,19 +162,15 @@ def totensor(inpt: Union[np.array, torch.Tensor]) -> torch.Tensor:
         return inpt
 
 
-def adjust_brightness(
-    inpt: torch.Tensor, brightness_factor: float
-) -> torch.Tensor:
-   
+def adjust_brightness(inpt: torch.Tensor, brightness_factor: float) -> torch.Tensor:
+
     fp = inpt.is_floating_point()
     bound = _max_value(inpt.dtype)
     output = inpt.add(brightness_factor * bound).clamp_(0, bound)
     return output if fp else output.to(inpt.dtype)
 
 
-def adjust_contrast(
-    inpt: torch.Tensor, contrast_factor: float
-) -> torch.Tensor:
+def adjust_contrast(inpt: torch.Tensor, contrast_factor: float) -> torch.Tensor:
     if contrast_factor < 0:
         raise ValueError(f"contrast_factor ({contrast_factor}) is not non-negative.")
 
@@ -141,4 +178,3 @@ def adjust_contrast(
     bound = _max_value(inpt.dtype)
     output = inpt.mul(contrast_factor).clamp_(0, bound)
     return output if fp else output.to(inpt.dtype)
-
