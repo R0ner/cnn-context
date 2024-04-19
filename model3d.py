@@ -7,8 +7,7 @@ class CNN3d(nn.Module):
         super().__init__()
         self.conv = nn.Sequential(
             *[
-                *self.conv_layer(1, 4, kernel_size=3),
-                nn.MaxPool3d(kernel_size=2, stride=2),
+                *self.conv_layer(1, 4, kernel_size=7, stride=2, padding=3),
                 *self.conv_layer(4, 8, kernel_size=3),
                 nn.MaxPool3d(kernel_size=2, stride=2),
                 *self.conv_layer(8, 16, kernel_size=3),
