@@ -7,62 +7,32 @@ class CNN3d(nn.Module):
         super().__init__()
         self.conv = nn.Sequential(
             *[
-                nn.Conv3d(
-                    in_channels=1,
-                    out_channels=4,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    bias=False,
-                ),
-                nn.BatchNorm3d(4),
-                nn.ReLU(),
+                *self.conv_layer(1, 4, kernel_size=3),
                 nn.MaxPool3d(kernel_size=2, stride=2),
-                nn.Conv3d(
-                    in_channels=4,
-                    out_channels=8,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    bias=False,
-                ),
-                nn.BatchNorm3d(8),
-                nn.ReLU(),
+                *self.conv_layer(4, 8, kernel_size=3),
                 nn.MaxPool3d(kernel_size=2, stride=2),
-                nn.Conv3d(
-                    in_channels=8,
-                    out_channels=16,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    bias=False,
-                ),
-                nn.BatchNorm3d(16),
-                nn.ReLU(),
+                *self.conv_layer(8, 16, kernel_size=3),
                 nn.MaxPool3d(kernel_size=2, stride=2),
-                nn.Conv3d(
-                    in_channels=16,
-                    out_channels=32,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    bias=False,
-                ),
-                nn.BatchNorm3d(32),
-                nn.ReLU(),
+                *self.conv_layer(16, 32, kernel_size=3),
                 nn.MaxPool3d(kernel_size=2, stride=2),
-                nn.Conv3d(
-                    in_channels=32,
-                    out_channels=32,
-                    kernel_size=1,
-                    stride=1,
-                    padding=0,
-                    bias=False,
-                ),
-                nn.BatchNorm3d(32),
+                *self.conv_layer(32, 32, kernel_size=3)
             ]
         )
         self.fc = nn.Linear(4096, num_classes)
+
+    def conv_layer(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        return [
+            nn.Conv3d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                bias=False,
+            ),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU()
+        ]
 
     def forward(self, x):
         x = self.conv(x)
