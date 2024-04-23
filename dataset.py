@@ -19,7 +19,7 @@ class HWSet(Dataset):
         self.val_img_dir = f"{self.data_dir}/val_images_hw"
         self.test_img_dir = f"{self.data_dir}/test_images_hw"
         self.train_img_dirs = [
-            f"{self.data_dir}/train_images_{idx}_hw" for idx in range(4)
+            f"{self.data_dir}/train_images_{idx}_hw" for idx in range(5)
         ]
         self.train_img_dirs = [
             img_dir for img_dir in self.train_img_dirs if os.path.exists(img_dir)
