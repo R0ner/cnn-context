@@ -45,6 +45,15 @@ def get_args_parser() -> argparse.ArgumentParser:
 
     # Custom loss function
     parser.add_argument("--sp_loss", action="store_true")
+    parser.add_argument(
+        "--sp_weight",
+        default=1.0,
+        type=float,
+        help="Weight given to the superpixel loss.",
+    )
+    parser.add_argument(
+        "--sp_lw", type=str, default="constant", help="Layer weighting scheme"
+    )
 
     # Model parameters
     parser.add_argument(
@@ -122,7 +131,12 @@ if __name__ == "__main__":
     if not sp_loss:
         criterion = torch.nn.CrossEntropyLoss()
     else:
-        criterion = SuperpixelCriterion(model_type, device=device)
+        criterion = SuperpixelCriterion(
+            model_type,
+            sp_loss_weight=args.sp_weight,
+            layer_weights=args.sp_lw,
+            device=device,
+        )
 
     # Optimizers
     optimizer_a = torch.optim.Adam(model_a.parameters(), lr=lr)
