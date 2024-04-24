@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.autograd import Variable
@@ -170,3 +171,11 @@ def get_performance(metrics: dict[list]) -> dict[float]:
     if "obj_scores" in metrics:
         performance["mean_obj_score"] = np.mean(metrics["obj_scores"]).item()
     return performance
+
+def show_imarray(imarray, ax=None, **kwargs):
+    if imarray.ndim > 2:
+        imarray = np.moveaxis(imarray, 0, -1)
+    if ax is None:
+        plt.imshow(imarray, **kwargs)
+    else:
+        ax.imshow(imarray, **kwargs)
