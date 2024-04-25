@@ -1,3 +1,4 @@
+import json
 import os
 
 import numpy as np
@@ -17,31 +18,30 @@ class BNSet(Dataset):
         self.split = split.lower()
         self.subset = subset
         self.transform = transform
-        self.val_dir = f"{self.data_dir}/validation"
-        self.test_dir = f"{self.data_dir}/test"
-        self.train_dir = f"{self.data_dir}/train"
+        self.vol_dir = f"{self.data_dir}/train"
+
+        with open(f'{data_dir}/single_bugs_split.json', 'r') as fp:
+            self.datasplit = json.load(fp)
 
         self.volumes = []
         self.labels = []
-        if self.split == "train":
-            for idx, name in enumerate(sorted(os.listdir(self.train_dir))):
-                if self.subset is not None and name.lower() not in self.subset:
-                    continue
-                bug_paths = list(
-                    filter(
-                        lambda f: f.endswith(".tif"),
-                        map(
-                            lambda file: f"{self.train_dir}/{name}/{file}",
-                            sorted(os.listdir(f"{self.train_dir}/{name}")),
-                        ),
-                    )
+        for idx, name in enumerate(sorted(os.listdir(self.vol_dir))):
+            if self.subset is not None and name.lower() not in self.subset:
+                continue
+            bug_paths = list(
+                filter(
+                    lambda f: f.endswith(".tif"),
+                    map(
+                        lambda file: f"{self.vol_dir}/{name}/{file}",
+                        sorted(os.listdir(f"{self.vol_dir}/{name}")),
+                    ),
                 )
-                self.volumes.extend(bug_paths)
-                self.labels.extend(len(bug_paths) * [idx])
-        elif self.split == "val":
-            raise NotImplementedError
-        elif self.split == "test":
-            raise NotImplementedError
+            )
+            self.volumes.extend(bug_paths)
+            self.labels.extend(len(bug_paths) * [idx])
+        
+        self.volumes = [self.volumes[idx] for idx in self.datasplit[self.split]]
+        self.labels = [self.labels[idx] for idx in self.datasplit[self.split]]
 
         self.labels = np.array(self.labels)
 
@@ -63,29 +63,24 @@ class BNSetMasks(BNSet):
         self.transform_shared = transform_shared
         self.transform_vol = transform_vol
         
-        self.val_mask_dir = f"{self.data_dir}/validation_mask"
-        self.test_mask_dir = f"{self.data_dir}/test_mask"
-        self.train_mask_dir = f"{self.data_dir}/train_mask"
+        self.mask_dir = f"{self.data_dir}/train_mask"
 
         self.masks = []
-        if self.split == "train":
-            for idx, name in enumerate(sorted(os.listdir(self.train_mask_dir))):
-                if self.subset is not None and name.lower() not in self.subset:
-                    continue
-                mask_paths = list(
-                    filter(
-                        lambda f: f.endswith(".tif"),
-                        map(
-                            lambda file: f"{self.train_mask_dir}/{name}/{file}",
-                            sorted(os.listdir(f"{self.train_mask_dir}/{name}")),
-                        ),
-                    )
+        
+        for idx, name in enumerate(sorted(os.listdir(self.mask_dir))):
+            if self.subset is not None and name.lower() not in self.subset:
+                continue
+            mask_paths = list(
+                filter(
+                    lambda f: f.endswith(".tif"),
+                    map(
+                        lambda file: f"{self.mask_dir}/{name}/{file}",
+                        sorted(os.listdir(f"{self.mask_dir}/{name}")),
+                    ),
                 )
-                self.masks.extend(mask_paths)
-        elif self.split == "val":
-            raise NotImplementedError
-        elif self.split == "test":
-            raise NotImplementedError
+            )
+            self.masks.extend(mask_paths)
+        self.masks = [self.masks[idx] for idx in self.datasplit[self.split]]
         
     def __getitem__(self, item):
         volume = imread(self.volumes[item])[np.newaxis]
@@ -142,7 +137,6 @@ transform_vol = transforms.Compose(
         T.Standardize(0.0142, 0.0670)
     ]
 )
-
 
 transform_shared_augment = transforms.Compose(
     [
