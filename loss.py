@@ -89,7 +89,7 @@ class SuperpixelCriterion:
         sp_weights = self.get_sp_weights(masks)
         n_layers = len(outs)
 
-        weight_sum = 0
+        layer_weight_sum = 0
         loss = 0
         for i, (sp, sp_w) in enumerate(zip(outs[:-1], sp_weights)):
             layer_weight = self.get_layer_weight(n_layers - i)
@@ -99,7 +99,7 @@ class SuperpixelCriterion:
                 sp_w.sum() * sp_w.numel()
             )
 
-        loss = loss / weight_sum
+        loss = loss / layer_weight_sum
         loss_ce = self.ce_criterion(outs[-1], targets)
         loss = self.sp_loss_weight * loss + loss_ce
         return loss, loss_ce
