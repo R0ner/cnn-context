@@ -25,9 +25,10 @@ class BNSet(Dataset):
 
         self.volumes = []
         self.labels = []
+        self.labels_include = []
         for idx, name in enumerate(sorted(os.listdir(self.vol_dir))):
-            if self.subset is not None and name.lower() not in self.subset:
-                continue
+            if self.subset is None or name.lower() in self.subset:
+                self.labels_include.append(idx)
             bug_paths = list(
                 filter(
                     lambda f: f.endswith(".tif"),
@@ -40,8 +41,10 @@ class BNSet(Dataset):
             self.volumes.extend(bug_paths)
             self.labels.extend(len(bug_paths) * [idx])
         
-        self.volumes = [self.volumes[idx] for idx in self.datasplit[self.split]]
-        self.labels = [self.labels[idx] for idx in self.datasplit[self.split]]
+        self.include = [label in self.labels_include for label in self.labels]
+
+        self.volumes = [self.volumes[idx] for idx in self.datasplit[self.split] if self.include[idx]]
+        self.labels = [self.labels[idx] for idx in self.datasplit[self.split] if self.include[idx]]
 
         self.labels = np.array(self.labels)
 
@@ -80,7 +83,7 @@ class BNSetMasks(BNSet):
                 )
             )
             self.masks.extend(mask_paths)
-        self.masks = [self.masks[idx] for idx in self.datasplit[self.split]]
+        self.masks = [self.masks[idx] for idx in self.datasplit[self.split] if self.include[idx]]
         
     def __getitem__(self, item):
         volume = imread(self.volumes[item])[np.newaxis]
@@ -114,7 +117,7 @@ def get_dloader_mask(split, batch_size, data_dir="data/BugNIST_DATA", subset=Non
             split,
             subset=subset,
             transform_shared=transform_shared,
-            transform_vol=None,
+            transform_vol=transform_vol,
         )
     dloader = DataLoader(
         dset,
