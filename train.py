@@ -54,6 +54,8 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--sp_lw", type=str, default="constant", help="Layer weighting scheme"
     )
+    parser.add_argument("--sp_normalize", action="store_true")
+    parser.add_argument("--sp_binary", action="store_true")
 
     # Model parameters
     parser.add_argument(
@@ -135,7 +137,8 @@ if __name__ == "__main__":
             model_type,
             sp_loss_weight=args.sp_weight,
             layer_weights=args.sp_lw,
-            normalize=True,
+            normalize=args.sp_normalize,
+            binary=args.sp_binary,
             device=device,
         )
 
