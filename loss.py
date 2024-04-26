@@ -5,8 +5,9 @@ from torch import nn
 
 
 class SuperpixelWeights:
-    def __init__(self, model_type: str, device: str = "cpu") -> None:
+    def __init__(self, model_type: str, normalize: bool = True, device: str = "cpu") -> None:
         self.model_type = model_type
+        self.normalize = normalize
         self.device = device
 
         if self.model_type != "r18":
@@ -54,6 +55,9 @@ class SuperpixelWeights:
         x = self.layer234(x)
         sp_weights.append(1 - x)
 
+        if self.normalize:
+            sp_weights = [(sp_w - sp_w.min()) / (sp_w.max() - sp_w.min()) for sp_w in sp_weights]
+        
         return sp_weights
 
 
@@ -63,19 +67,22 @@ class SuperpixelCriterion:
         model_type: str,
         sp_loss_weight: float = 1,
         layer_weights: str = "constant",
+        normalize: bool = True,
         device: str = "cpu",
     ) -> None:
         self.model_type = model_type
         self.sp_loss_weight = sp_loss_weight
         self.layer_weights = layer_weights.lower()
+        self.normalize = normalize
         self.device = device
+
         self.layer_weight_schemes = ("constant", "geometric")
 
         assert (
             self.layer_weights in self.layer_weight_schemes
         ), f"layer_weights must be one of {self.layer_weight_schemes}"
 
-        self.get_sp_weights = SuperpixelWeights(model_type, device)
+        self.get_sp_weights = SuperpixelWeights(self.model_type, normalize=self.normalize, device=self.device)
         self.ce_criterion = nn.CrossEntropyLoss()  # Cross entropy
 
         if self.layer_weights == "constant":
