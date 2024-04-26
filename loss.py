@@ -87,7 +87,7 @@ class SuperpixelCriterion:
         self, outs: list[torch.tensor], targets: torch.tensor, masks: torch.tensor
     ) -> torch.tensor:
         sp_weights = self.get_sp_weights(masks)
-        n_layers = len(outs)
+        n_layers = len(sp_weights)
 
         layer_weight_sum = 0
         loss = 0
