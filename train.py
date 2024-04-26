@@ -135,6 +135,7 @@ if __name__ == "__main__":
             model_type,
             sp_loss_weight=args.sp_weight,
             layer_weights=args.sp_lw,
+            normalize=True,
             device=device,
         )
 
