@@ -228,3 +228,19 @@ def get_rgb_fractal_noise(h, w):
     )[:, :h, :w]
     
     return (noise - noise.min()) / (noise.max() - noise.min())
+
+
+def get_random_fractal_noise3d(h, w, d):
+    ph, pw, pd = int(np.ceil(np.log2(h)).item()), int(np.ceil(np.log2(w)).item()), int(np.ceil(np.log2(d)).item())
+
+    ph_res, pw_res, pd_res = random.randint(0, ph - 1), random.randint(0, pw - 1), random.randint(0, pd - 1)
+
+    octaves = random.randint(1, min(ph - ph_res, pw - pw_res, pd - pd_res))
+
+    h_res, w_res, d_res = 2 ** ph_res, 2 ** pw_res, 2 ** pd_res
+
+    h_gen, w_gen, d_gen = 2 ** ph, 2 ** pw, 2 ** pd
+    noise = generate_fractal_noise_3d((h_gen, w_gen, d_gen), (h_res, w_res, d_res), octaves, 0.5)
+
+    
+    return (noise - noise.min()) / (noise.max() - noise.min())
