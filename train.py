@@ -45,6 +45,15 @@ def get_args_parser() -> argparse.ArgumentParser:
 
     # Custom loss function
     parser.add_argument("--sp_loss", action="store_true")
+    parser.add_argument(
+        "--sp_weight",
+        default=1.0,
+        type=float,
+        help="Weight given to the superpixel loss.",
+    )
+    parser.add_argument(
+        "--sp_lw", type=str, default="constant", help="Layer weighting scheme"
+    )
 
     # Model parameters
     parser.add_argument(
@@ -122,7 +131,12 @@ if __name__ == "__main__":
     if not sp_loss:
         criterion = torch.nn.CrossEntropyLoss()
     else:
-        criterion = SuperpixelCriterion(model_type, device=device)
+        criterion = SuperpixelCriterion(
+            model_type,
+            sp_loss_weight=args.sp_weight,
+            layer_weights=args.sp_lw,
+            device=device,
+        )
 
     # Optimizers
     optimizer_a = torch.optim.Adam(model_a.parameters(), lr=lr)
@@ -145,8 +159,22 @@ if __name__ == "__main__":
     earlystopper_b = EarlyStopper(mode="min", patience=patience)
     earlystopper_c = EarlyStopper(mode="min", patience=patience)
 
-    trainloader = get_dloader("train", batch_size=batch_size, noise=True, num_workers=num_workers)
-    valloader = get_dloader("val", batch_size=1, noise=True, num_workers=num_workers)
+    trainloader = get_dloader(
+        "train",
+        batch_size=batch_size,
+        noise=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=True,
+    )
+    valloader = get_dloader(
+        "val",
+        batch_size=1,
+        noise=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=True,
+    )
 
     # WandB
     if use_wandb:
@@ -167,18 +195,15 @@ if __name__ == "__main__":
     best = {name: float("inf") for name in names}
 
     metrics_train_dict = lambda: {
-        "loss_total": [], 
-        "loss_ce": [], 
-        "loss_features": [], 
-        "preds": [], 
-        "scores": [], 
-        "labels": []
+        "loss_total": [],
+        "loss_ce": [],
+        "loss_features": [],
+        "preds": [],
+        "scores": [],
+        "labels": [],
     }
-    
-    metrics_val_dict = lambda: {
-        **metrics_train_dict(),
-        "obj_scores": []
-    }
+
+    metrics_val_dict = lambda: {**metrics_train_dict(), "obj_scores": []}
 
     # Training loop
     print(f"Start training with model type: {model_type}")
@@ -206,7 +231,7 @@ if __name__ == "__main__":
                 masks=masks,
                 device=device,
                 metrics=metrics_train_a,
-                return_features=sp_loss
+                return_features=sp_loss,
             )
             train_step(
                 model_b,
@@ -217,7 +242,7 @@ if __name__ == "__main__":
                 masks=masks,
                 device=device,
                 metrics=metrics_train_b,
-                return_features=sp_loss
+                return_features=sp_loss,
             )
             train_step(
                 model_c,
@@ -228,7 +253,7 @@ if __name__ == "__main__":
                 masks=masks,
                 device=device,
                 metrics=metrics_train_c,
-                return_features=sp_loss
+                return_features=sp_loss,
             )
 
         # Val
@@ -245,7 +270,7 @@ if __name__ == "__main__":
                 criterion,
                 device=device,
                 metrics=metrics_val_a,
-                return_features=sp_loss
+                return_features=sp_loss,
             )
             eval_step(
                 model_b,
@@ -255,7 +280,7 @@ if __name__ == "__main__":
                 criterion,
                 device=device,
                 metrics=metrics_val_b,
-                return_features=sp_loss
+                return_features=sp_loss,
             )
             eval_step(
                 model_c,
@@ -265,7 +290,7 @@ if __name__ == "__main__":
                 criterion,
                 device=device,
                 metrics=metrics_val_c,
-                return_features=sp_loss
+                return_features=sp_loss,
             )
         # Calculate performance metrics
         log_stats = dict()
@@ -292,8 +317,8 @@ if __name__ == "__main__":
                 performance_train = get_performance(metrics_train)
                 performance_val = get_performance(metrics_val)
 
-                print(f'Train performance: {performance_train}')
-                print(f'Val performance: {performance_val}')
+                print(f"Train performance: {performance_train}")
+                print(f"Val performance: {performance_val}")
 
                 lr_scheduler.step(performance_val["mean_loss_total"])
                 stop[name] = earlystopper(performance_val["mean_loss_total"])

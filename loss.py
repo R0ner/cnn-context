@@ -58,23 +58,48 @@ class SuperpixelWeights:
 
 
 class SuperpixelCriterion:
-    def __init__(self, model_type: str, device: str = "cpu") -> None:
+    def __init__(
+        self,
+        model_type: str,
+        sp_loss_weight: float = 1,
+        layer_weights: str = "constant",
+        device: str = "cpu",
+    ) -> None:
         self.model_type = model_type
+        self.sp_loss_weight = sp_loss_weight
+        self.layer_weights = layer_weights.lower()
         self.device = device
+        self.layer_weight_schemes = ("constant", "geometric")
+
+        assert (
+            self.layer_weights in self.layer_weight_schemes
+        ), f"layer_weights must be one of {self.layer_weight_schemes}"
 
         self.get_sp_weights = SuperpixelWeights(model_type, device)
         self.ce_criterion = nn.CrossEntropyLoss()  # Cross entropy
+
+        if self.layer_weights == "constant":
+            self.get_layer_weight = lambda i: 1
+        if self.layer_weights == "geometric":
+            self.get_layer_weight = lambda i: 2 ** (-i)
 
     def __call__(
         self, outs: list[torch.tensor], targets: torch.tensor, masks: torch.tensor
     ) -> torch.tensor:
         sp_weights = self.get_sp_weights(masks)
+        n_layers = len(sp_weights)
 
+        layer_weight_sum = 0
         loss = 0
-        for sp, sp_w in zip(outs[:-1], sp_weights):
-            loss += (sp_w * torch.square(sp)).sum() / (sp_w.sum() * sp_w.numel())
+        for i, (sp, sp_w) in enumerate(zip(outs[:-1], sp_weights)):
+            layer_weight = self.get_layer_weight(n_layers - i)
+            layer_weight_sum += layer_weight
 
-        loss /= len(sp_weights)
+            loss = loss + layer_weight * (sp_w * torch.square(sp)).sum() / (
+                sp_w.sum() * sp_w.numel()
+            )
+
+        loss = loss / layer_weight_sum
         loss_ce = self.ce_criterion(outs[-1], targets)
-        loss += loss_ce
+        loss = self.sp_loss_weight * loss + loss_ce
         return loss, loss_ce
