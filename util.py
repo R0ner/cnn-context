@@ -173,6 +173,9 @@ def get_performance(metrics: dict[list]) -> dict[float]:
     return performance
 
 def show_imarray(imarray, ax=None, **kwargs):
+    if isinstance(imarray, torch.Tensor):
+        imarray = imarray.numpy()
+    imarray = np.squeeze(imarray)
     if imarray.ndim > 2:
         imarray = np.moveaxis(imarray, 0, -1)
     if ax is None:
