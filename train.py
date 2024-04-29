@@ -69,6 +69,9 @@ def get_args_parser() -> argparse.ArgumentParser:
     # Multiprocessing
     parser.add_argument("--num_workers", default=0, type=int)
 
+    # Saving
+    parser.add_argument("--save_every", default=100, type=int)
+    
     # weights and biases
     parser.add_argument("--wandb", action="store_true")
     return parser
@@ -77,6 +80,8 @@ def get_args_parser() -> argparse.ArgumentParser:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("HW training script", parents=[get_args_parser()])
     args = parser.parse_args()
+
+    print('Args:', args)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -105,7 +110,7 @@ if __name__ == "__main__":
     patience = args.patience
 
     # Checkpoints
-    save_every = 40
+    save_every = 100
 
     # Use wandb
     use_wandb = args.wandb
