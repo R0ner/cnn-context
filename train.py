@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import time
 
@@ -12,7 +13,6 @@ from tqdm import tqdm
 import wandb
 from dataset import get_dloader, normalize_hw, normalize_hw_mask
 from loss import SuperpixelCriterion
-from perlin import get_rgb_fractal_noise
 from scheduler import EarlyStopper, EarlyStopperSmooth, ReduceLROnPlateauSmooth
 from util import DummyModel, eval_step, get_performance, train_step
 
@@ -134,6 +134,10 @@ if __name__ == "__main__":
     for dir in (save_dir, *save_dir_models):
         if not os.path.exists(dir):
             os.mkdir(dir)
+    
+    # Save args.
+    with open(f'{save_dir}/config.json', 'w') as f:
+        json.dump(args.__dict__, f, indent=6)
 
     # Set manual seed!
     torch.manual_seed(seed=seed)
