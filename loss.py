@@ -15,7 +15,7 @@ class SuperpixelWeights:
             raise NotImplementedError
 
         self.conv7x7 = nn.Conv2d(
-            1, 1, kernel_size=7, stride=2, padding=3, bias=False
+            1, 1, kernel_size=7, stride=2, padding=3, bias=False, padding_mode='reflect'
         ).to(device)
         self.conv7x7.weight = self.conv7x7.weight.requires_grad_(False)
         self.conv7x7.weight *= 0
@@ -24,10 +24,10 @@ class SuperpixelWeights:
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         self.conv3x3 = nn.Conv2d(
-            1, 1, kernel_size=3, stride=1, padding=1, bias=False
+            1, 1, kernel_size=3, stride=1, padding=1, bias=False, padding_mode='reflect'
         ).to(device)
         self.conv3x3_s2 = nn.Conv2d(
-            1, 1, kernel_size=3, stride=2, padding=1, bias=False
+            1, 1, kernel_size=3, stride=2, padding=1, bias=False, padding_mode='reflect'
         ).to(device)
 
         for conv in (self.conv3x3, self.conv3x3_s2):
