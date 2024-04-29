@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
     save_dir_models = {k: f"{save_dir}/{k}" for k in names}
 
-    for dir in (save_dir, *save_dir_models):
+    for dir in (save_dir, *save_dir_models.values()):
         if not os.path.exists(dir):
             os.mkdir(dir)
     
@@ -188,7 +188,7 @@ if __name__ == "__main__":
         )
     else:
         get_early_stopper = lambda: EarlyStopper(mode="min", patience=patience)
-    earlystoppers = {k: get_early_stopper for k in names}
+    earlystoppers = {k: get_early_stopper() for k in names}
 
     persistent_workers = num_workers > 0
     trainloader = get_dloader(

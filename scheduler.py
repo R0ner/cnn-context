@@ -54,10 +54,10 @@ class ReduceLROnPlateauSmooth(ReduceLROnPlateau):
         )
         self.smoother = Smoother(smooth_mode=smooth_mode, n_smooth=n_smooth)
 
-    def step(self, metric: Any, epoch: int | None = ...) -> None:
+    def step(self, metric: Any) -> None:
         metric = float(metric)
         smooth_metric = self.smoother(metric)
-        return super().step(smooth_metric, epoch)
+        return super().step(smooth_metric)
 
 
 class EarlyStopper:
