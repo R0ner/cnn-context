@@ -315,14 +315,14 @@ normalize_inv_imgnet = get_normalize_inv(normc_imgnet)
 normalize_inv_hw = get_normalize_inv(normc_hw)
 normalize_inv_hw_mask = get_normalize_inv(normc_hw_mask)
 
-transform = transforms.Compose(
-    [
-        transforms.Resize(256, antialias=True),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        normalize_imgnet,
-    ]
-)
+# transform = transforms.Compose(
+#     [
+#         transforms.Resize(256, antialias=True),
+#         transforms.CenterCrop(224),
+#         transforms.ToTensor(),
+#         normalize_imgnet,
+#     ]
+# )
 
 
 totensor = transforms.Compose(

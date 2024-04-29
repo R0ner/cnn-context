@@ -190,13 +190,14 @@ if __name__ == "__main__":
         get_early_stopper = lambda: EarlyStopper(mode="min", patience=patience)
     earlystoppers = {k: get_early_stopper for k in names}
 
+    persistent_workers = num_workers > 0
     trainloader = get_dloader(
         "train",
         batch_size=batch_size,
         noise=True,
         num_workers=num_workers,
         pin_memory=True,
-        persistent_workers=True,
+        persistent_workers=persistent_workers,
     )
     valloader = get_dloader(
         "val",
@@ -204,7 +205,7 @@ if __name__ == "__main__":
         noise=True,
         num_workers=num_workers,
         pin_memory=True,
-        persistent_workers=True,
+        persistent_workers=persistent_workers,
     )
 
     # WandB
