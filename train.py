@@ -13,8 +13,8 @@ import wandb
 from dataset import get_dloader, normalize_hw, normalize_hw_mask
 from loss import SuperpixelCriterion
 from perlin import get_rgb_fractal_noise
-from util import (DummyModel, EarlyStopper, eval_step, get_performance,
-                  train_step)
+from scheduler import EarlyStopper, EarlyStopperSmooth, ReduceLROnPlateauSmooth
+from util import DummyModel, eval_step, get_performance, train_step
 
 # Random seed
 seed = 191510
@@ -65,13 +65,15 @@ def get_args_parser() -> argparse.ArgumentParser:
     # Learning rate scheduler and early stopping
     parser.add_argument("--lr_patience", default=20, type=int)
     parser.add_argument("--patience", default=40, type=int)
+    parser.add_argument("--smooth_mode", default="", type=str)
+    parser.add_argument("--n_smooth", default=10, type=int)
 
     # Multiprocessing
     parser.add_argument("--num_workers", default=0, type=int)
 
     # Saving
     parser.add_argument("--save_every", default=100, type=int)
-    
+
     # weights and biases
     parser.add_argument("--wandb", action="store_true")
     return parser
@@ -81,7 +83,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("HW training script", parents=[get_args_parser()])
     args = parser.parse_args()
 
-    print('Args:', args)
+    print("Args:", args)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -109,6 +111,11 @@ if __name__ == "__main__":
     # Early stopping
     patience = args.patience
 
+    # Early stopping and lr scheduler smoothing
+    smooth_mode = args.smooth_mode
+    n_smooth = args.n_smooth
+    smooth = len(smooth_mode) > 0
+
     # Checkpoints
     save_every = 100
 
@@ -118,11 +125,13 @@ if __name__ == "__main__":
     # Use sp loss
     sp_loss = args.sp_loss
 
+    names = ("a", "b", "c")
+
     save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
-    save_dir_a = f"{save_dir}/a"
-    save_dir_b = f"{save_dir}/b"
-    save_dir_c = f"{save_dir}/c"
-    for dir in (save_dir, save_dir_a, save_dir_b, save_dir_c):
+
+    save_dir_models = {k: f"{save_dir}/{k}" for k in names}
+
+    for dir in (save_dir, *save_dir_models):
         if not os.path.exists(dir):
             os.mkdir(dir)
 
@@ -130,9 +139,7 @@ if __name__ == "__main__":
     torch.manual_seed(seed=seed)
 
     # Get models
-    model_a = get_model(model_type, device=device, seed=seed)
-    model_b = get_model(model_type, device=device, seed=seed)
-    model_c = get_model(model_type, device=device, seed=seed)
+    models = {k: get_model(model_type, device=device, seed=seed) for k in names}
 
     # Loss function
     if not sp_loss:
@@ -148,25 +155,36 @@ if __name__ == "__main__":
         )
 
     # Optimizers
-    optimizer_a = torch.optim.Adam(model_a.parameters(), lr=lr)
-    optimizer_b = torch.optim.Adam(model_b.parameters(), lr=lr)
-    optimizer_c = torch.optim.Adam(model_c.parameters(), lr=lr)
+    optimizers = {
+        k: torch.optim.Adam(model.parameters(), lr=lr) for k, model in models.items()
+    }
 
     # Learning rate schedulers
-    lr_scheduler_a = ReduceLROnPlateau(
-        optimizer_a, mode="min", factor=factor, patience=lr_patience
-    )
-    lr_scheduler_b = ReduceLROnPlateau(
-        optimizer_b, mode="min", factor=factor, patience=lr_patience
-    )
-    lr_scheduler_c = ReduceLROnPlateau(
-        optimizer_c, mode="min", factor=factor, patience=lr_patience
-    )
+    if smooth:
+        get_lr_scheduler = lambda optimizer: ReduceLROnPlateauSmooth(
+            optimizer,
+            mode="min",
+            smooth_mode=smooth_mode,
+            n_smooth=n_smooth,
+            factor=factor,
+            patience=lr_patience,
+        )
+    else:
+        get_lr_scheduler = lambda optimizer: ReduceLROnPlateau(
+            optimizer, mode="min", factor=factor, patience=lr_patience
+        )
+    lr_schedulers = {
+        k: get_lr_scheduler(optimizer) for k, optimizer in optimizers.items()
+    }
 
     # Early stopping
-    earlystopper_a = EarlyStopper(mode="min", patience=patience)
-    earlystopper_b = EarlyStopper(mode="min", patience=patience)
-    earlystopper_c = EarlyStopper(mode="min", patience=patience)
+    if smooth:
+        get_early_stopper = lambda: EarlyStopperSmooth(
+            mode="min", patience=patience, smooth_mode=smooth_mode, n_smooth=n_smooth
+        )
+    else:
+        get_early_stopper = lambda: EarlyStopper(mode="min", patience=patience)
+    earlystoppers = {k: get_early_stopper for k in names}
 
     trainloader = get_dloader(
         "train",
@@ -195,11 +213,7 @@ if __name__ == "__main__":
         )
 
     all_stats = {}
-    completed_a = False
-    completed_b = False
-    completed_c = False
-
-    names = ("a", "b", "c")
+    completed = {k: False for k in names}
 
     best = {name: float("inf") for name in names}
 
@@ -217,134 +231,113 @@ if __name__ == "__main__":
     # Training loop
     print(f"Start training with model type: {model_type}")
     for epoch in range(n_epochs):
-        metrics_train_a = metrics_train_dict()
-        metrics_train_b = metrics_train_dict()
-        metrics_train_c = metrics_train_dict()
-        metrics_val_a = metrics_val_dict()
-        metrics_val_b = metrics_val_dict()
-        metrics_val_c = metrics_val_dict()
+        metrics_train = {k: metrics_train_dict() for k in names}
+        metrics_val = {k: metrics_val_dict() for k in names}
 
         print(f"Epoch {epoch}")
 
         # Train
-        model_a.train()
-        model_b.train()
-        model_c.train()
+        for model in models.values():
+            model.train()
         for imgs, labels, masks, noise in tqdm(trainloader):
             train_step(
-                model_a,
+                models["a"],
                 normalize_hw(imgs),
                 labels,
-                optimizer_a,
+                optimizers["a"],
                 criterion,
                 masks=masks,
                 device=device,
-                metrics=metrics_train_a,
+                metrics=metrics_train["a"],
                 return_features=sp_loss,
             )
             train_step(
-                model_b,
+                models["b"],
                 normalize_hw_mask(imgs) * masks,
                 labels,
-                optimizer_b,
+                optimizers["b"],
                 criterion,
                 masks=masks,
                 device=device,
-                metrics=metrics_train_b,
+                metrics=metrics_train["b"],
                 return_features=sp_loss,
             )
             train_step(
-                model_c,
+                models["c"],
                 normalize_hw_mask(imgs * masks + noise * (~masks)),
                 labels,
-                optimizer_c,
+                optimizers["c"],
                 criterion,
                 masks=masks,
                 device=device,
-                metrics=metrics_train_c,
+                metrics=metrics_train["c"],
                 return_features=sp_loss,
             )
 
         # Val
-        model_a.eval()
-        model_b.eval()
-        model_c.eval()
-
+        for model in models.values():
+            model.eval()
         for imgs, labels, masks, noise in tqdm(valloader):
             eval_step(
-                model_a,
+                models["a"],
                 normalize_hw(imgs),
                 labels,
                 masks,
                 criterion,
                 device=device,
-                metrics=metrics_val_a,
+                metrics=metrics_val["a"],
                 return_features=sp_loss,
             )
             eval_step(
-                model_b,
+                models["b"],
                 normalize_hw_mask(imgs) * masks,
                 labels,
                 masks,
                 criterion,
                 device=device,
-                metrics=metrics_val_b,
+                metrics=metrics_val["b"],
                 return_features=sp_loss,
             )
             eval_step(
-                model_c,
+                models["c"],
                 normalize_hw_mask(imgs * masks + noise * (~masks)),
                 labels,
                 masks,
                 criterion,
                 device=device,
-                metrics=metrics_val_c,
+                metrics=metrics_val["c"],
                 return_features=sp_loss,
             )
+
         # Calculate performance metrics
         log_stats = dict()
         suffix = {name: "" for name in names}
         stop = {name: False for name in names}
-        for (
-            name,
-            completed,
-            metrics_train,
-            metrics_val,
-            lr_scheduler,
-            earlystopper,
-            optimizer,
-        ) in zip(
-            names,
-            (completed_a, completed_b, completed_c),
-            (metrics_train_a, metrics_train_b, metrics_train_c),
-            (metrics_val_a, metrics_val_b, metrics_val_c),
-            (lr_scheduler_a, lr_scheduler_b, lr_scheduler_c),
-            (earlystopper_a, earlystopper_b, earlystopper_c),
-            (optimizer_a, optimizer_b, optimizer_c),
-        ):
-            if not completed:
-                performance_train = get_performance(metrics_train)
-                performance_val = get_performance(metrics_val)
+        for k in names:
+            if completed[k]:
+                continue
+            performance_train = get_performance(metrics_train[k])
+            performance_val = get_performance(metrics_val[k])
 
-                print(f"Train performance: {performance_train}")
-                print(f"Val performance: {performance_val}")
+            print(f"Train performance: {performance_train}")
+            print(f"Val performance: {performance_val}")
 
-                lr_scheduler.step(performance_val["mean_loss_total"])
-                stop[name] = earlystopper(performance_val["mean_loss_total"])
+            lr_schedulers[k].step(performance_val["mean_loss_total"])
+            stop[k] = earlystoppers[k](performance_val["mean_loss_total"])
 
-                log_stats = (
-                    log_stats
-                    | {f"train/{k}_{name}": v for k, v in performance_train.items()}
-                    | {f"val/{k}_{name}": v for k, v in performance_val.items()}
-                    | {f"param/lr_{name}": optimizer.param_groups[-1]["lr"]}
-                )
+            log_stats = (
+                log_stats
+                | {f"train/{p_k}_{k}": p_v for p_k, p_v in performance_train.items()}
+                | {f"val/{p_k}_{k}": p_v for p_k, p_v in performance_val.items()}
+                | {f"param/lr_{k}": optimizers[k].param_groups[-1]["lr"]}
+            )
 
-                if (
-                    performance_val["mean_loss_total"] < best[name]
-                    and (epoch + 1) > save_every
-                ):
-                    suffix[name] = "_best"
-            best[name] = min(best[name], performance_val["mean_loss_total"])
+            if (
+                performance_val["mean_loss_total"] < best[k]
+                and (epoch + 1) > save_every
+            ):
+                suffix[k] = "_best"
+            best[k] = min(best[k], performance_val["mean_loss_total"])
 
         # Track stats
         all_stats[epoch] = log_stats
@@ -354,41 +347,21 @@ if __name__ == "__main__":
             wandb.log(log_stats)
 
         # Delete previous best.
-        if len(suffix["a"]):
-            for f in os.listdir(save_dir_a):
-                if suffix["a"] in f:
-                    os.remove(f"{save_dir_a}/{f}")
-        if len(suffix["b"]):
-            for f in os.listdir(save_dir_b):
-                if suffix["b"] in f:
-                    os.remove(f"{save_dir_b}/{f}")
-        if len(suffix["c"]):
-            for f in os.listdir(save_dir_c):
-                if suffix["c"] in f:
-                    os.remove(f"{save_dir_c}/{f}")
+        for k in names:
+            if len(suffix[k]):
+                for f in os.listdir(save_dir_models[k]):
+                    if suffix[k] in f:
+                        os.remove(f"{save_dir_models[k]}/{f}")
 
         # Save checkpoints
         save = (epoch + 1) % save_every == 0 or (epoch + 1) == n_epochs
 
-        save_a = (save or len(suffix["a"]) or stop["a"]) and not completed_a
-        save_b = (save or len(suffix["b"]) or stop["b"]) and not completed_b
-        save_c = (save or len(suffix["c"]) or stop["c"]) and not completed_c
-
-        if save_a:
-            torch.save(
-                {"epoch": epoch, "model_state_dict": model_a.state_dict()},
-                f"{save_dir_a}/{model_type}_e{epoch}{suffix['a']}.cpt",
-            )
-        if save_b:
-            torch.save(
-                {"epoch": epoch, "model_state_dict": model_b.state_dict()},
-                f"{save_dir_b}/{model_type}_e{epoch}{suffix['b']}.cpt",
-            )
-        if save_c:
-            torch.save(
-                {"epoch": epoch, "model_state_dict": model_c.state_dict()},
-                f"{save_dir_c}/{model_type}_e{epoch}{suffix['c']}.cpt",
-            )
+        for k in names:
+            if (save or len(suffix[k]) or stop[k]) and not completed[k]:
+                torch.save(
+                    {"epoch": epoch, "model_state_dict": models[k].state_dict()},
+                    f"{save_dir_models[k]}/{model_type}_e{epoch}{suffix[k]}.cpt",
+                )
 
         # Save stats
         if save:
@@ -396,20 +369,13 @@ if __name__ == "__main__":
             stats_df.to_csv(f"{save_dir}/stats.csv")
 
         # If stop, set completed flag.
-        if stop["a"] and not completed_a:
-            completed_a = True
-            model_a = DummyModel()
-
-        if stop["b"] and not completed_b:
-            completed_b = True
-            model_b = DummyModel()
-
-        if stop["c"] and not completed_c:
-            completed_c = True
-            model_c = DummyModel()
+        for k in names:
+            if stop[k] and not completed[k]:
+                completed[k] = True
+                models[k] = DummyModel()
 
         # Break if all models converged.
-        if completed_a and completed_b and completed_c:
+        if all(completed.values()):
             break
 
     stats_df = pd.DataFrame.from_dict(all_stats, orient="index")
