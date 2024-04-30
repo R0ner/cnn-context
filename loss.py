@@ -5,7 +5,13 @@ from torch import nn
 
 
 class SuperpixelWeights:
-    def __init__(self, model_type: str, normalize: bool = True, binary: bool = False, device: str = "cpu") -> None:
+    def __init__(
+        self,
+        model_type: str,
+        normalize: bool = True,
+        binary: bool = False,
+        device: str = "cpu",
+    ) -> None:
         self.model_type = model_type
         self.normalize = normalize
         self.binary = binary
@@ -15,7 +21,7 @@ class SuperpixelWeights:
             raise NotImplementedError
 
         self.conv7x7 = nn.Conv2d(
-            1, 1, kernel_size=7, stride=2, padding=3, bias=False, padding_mode='reflect'
+            1, 1, kernel_size=7, stride=2, padding=3, bias=False, padding_mode="reflect"
         ).to(device)
         self.conv7x7.weight = self.conv7x7.weight.requires_grad_(False)
         self.conv7x7.weight *= 0
@@ -24,10 +30,10 @@ class SuperpixelWeights:
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         self.conv3x3 = nn.Conv2d(
-            1, 1, kernel_size=3, stride=1, padding=1, bias=False, padding_mode='reflect'
+            1, 1, kernel_size=3, stride=1, padding=1, bias=False, padding_mode="reflect"
         ).to(device)
         self.conv3x3_s2 = nn.Conv2d(
-            1, 1, kernel_size=3, stride=2, padding=1, bias=False, padding_mode='reflect'
+            1, 1, kernel_size=3, stride=2, padding=1, bias=False, padding_mode="reflect"
         ).to(device)
 
         for conv in (self.conv3x3, self.conv3x3_s2):
@@ -40,13 +46,21 @@ class SuperpixelWeights:
 
         self.layer1 = nn.Sequential(*self.layer1)
         self.layer234 = nn.Sequential(*self.layer234)
-    
+
     @staticmethod
     def sp_normalize(sp_weights: list[torch.tensor]) -> list[torch.tensor]:
         sp_normalized = []
         for sp_w in sp_weights:
-            sp_w_min = sp_w.view(sp_w.size(0), -1).min(1,keepdim=True).values.view(-1, 1, 1, 1)
-            sp_w_max = sp_w.view(sp_w.size(0), -1).max(1,keepdim=True).values.view(-1, 1, 1, 1)
+            sp_w_min = (
+                sp_w.view(sp_w.size(0), -1)
+                .min(1, keepdim=True)
+                .values.view(-1, 1, 1, 1)
+            )
+            sp_w_max = (
+                sp_w.view(sp_w.size(0), -1)
+                .max(1, keepdim=True)
+                .values.view(-1, 1, 1, 1)
+            )
             sp_normalized.append((sp_w - sp_w_min) / (sp_w_max - sp_w_min))
         return sp_normalized
 
@@ -67,10 +81,10 @@ class SuperpixelWeights:
 
         if self.normalize:
             sp_weights = self.sp_normalize(sp_weights)
-        
+
         if self.binary:
             sp_weights = list(map(lambda sp_w: (sp_w > 0.5).float(), sp_weights))
-        
+
         return sp_weights
 
 
@@ -97,7 +111,12 @@ class SuperpixelCriterion:
             self.layer_weights in self.layer_weight_schemes
         ), f"layer_weights must be one of {self.layer_weight_schemes}"
 
-        self.get_sp_weights = SuperpixelWeights(self.model_type, normalize=self.normalize, binary=self.binary, device=self.device)
+        self.get_sp_weights = SuperpixelWeights(
+            self.model_type,
+            normalize=self.normalize,
+            binary=self.binary,
+            device=self.device,
+        )
         self.ce_criterion = nn.CrossEntropyLoss()  # Cross entropy
 
         if self.layer_weights == "constant":
@@ -117,11 +136,16 @@ class SuperpixelCriterion:
             layer_weight = self.get_layer_weight(n_layers - i)
             layer_weight_sum += layer_weight
 
-            loss = loss + layer_weight * (sp_w * torch.square(sp)).sum() / (
-                sp_w.sum() * sp_w.numel()
+            loss += (
+                layer_weight
+                * (
+                    (sp_w * torch.square(sp)).view(sp.size(0), -1).sum(1)
+                    / (sp_w.view(sp.size(0), -1).sum(1) * sp_w[0].numel())
+                ).mean()
             )
 
-        loss = loss / layer_weight_sum
         loss_ce = self.ce_criterion(outs[-1], targets)
-        loss = self.sp_loss_weight * loss + loss_ce
+
+        loss = loss / layer_weight_sum * self.sp_loss_weight + loss_ce
+
         return loss, loss_ce
