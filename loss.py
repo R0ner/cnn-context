@@ -40,6 +40,15 @@ class SuperpixelWeights:
 
         self.layer1 = nn.Sequential(*self.layer1)
         self.layer234 = nn.Sequential(*self.layer234)
+    
+    @staticmethod
+    def sp_normalize(sp_weights: list[torch.tensor]) -> list[torch.tensor]:
+        sp_normalized = []
+        for sp_w in sp_weights:
+            sp_w_min = sp_w.view(sp_w.size(0), -1).min(1,keepdim=True).values.view(-1, 1, 1, 1)
+            sp_w_max = sp_w.view(sp_w.size(0), -1).max(1,keepdim=True).values.view(-1, 1, 1, 1)
+            sp_normalized.append((sp_w - sp_w_min) / (sp_w_max - sp_w_min))
+        return sp_normalized
 
     def __call__(self, masks: torch.tensor) -> list[torch.tensor]:
         sp_weights = []
@@ -57,7 +66,7 @@ class SuperpixelWeights:
         sp_weights.append(1 - x)
 
         if self.normalize:
-            sp_weights = list(map(lambda sp_w: (sp_w - sp_w.min()) / (sp_w.max() - sp_w.min()), sp_weights))
+            sp_weights = self.sp_normalize(sp_weights)
         
         if self.binary:
             sp_weights = list(map(lambda sp_w: (sp_w > 0.5).float(), sp_weights))
