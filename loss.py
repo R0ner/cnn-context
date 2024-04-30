@@ -61,7 +61,7 @@ class SuperpixelWeights:
                 .max(1, keepdim=True)
                 .values.view(-1, 1, 1, 1)
             )
-            sp_normalized.append((sp_w - sp_w_min) / (sp_w_max - sp_w_min))
+            sp_normalized.append((sp_w - sp_w_min) / (sp_w_max - sp_w_min + 1e-7))
         return sp_normalized
 
     def __call__(self, masks: torch.tensor) -> list[torch.tensor]:
@@ -140,7 +140,7 @@ class SuperpixelCriterion:
                 layer_weight
                 * (
                     (sp_w * torch.square(sp)).view(sp.size(0), -1).sum(1)
-                    / (sp_w.view(sp.size(0), -1).sum(1) * sp_w[0].numel())
+                    / (sp_w.view(sp.size(0), -1).sum(1) * sp_w[0].numel() + 1e-7)
                 ).mean()
             )
 
