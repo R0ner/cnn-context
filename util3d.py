@@ -20,6 +20,8 @@ name_legend = {
 
 
 def show_volume(volume, label=None, size=1, **kwargs):
+    if isinstance(volume, torch.Tensor):
+        volume = volume.numpy()
     volume = np.squeeze(volume)
     fig, (ax0, ax1, ax2) = plt.subplots(
         1, 3, figsize=(size * 6, size * 3), tight_layout=True

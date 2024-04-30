@@ -144,6 +144,18 @@ class RandomRotation(MultiTransform):
                 volume = rotate(volume, angle, axes, reshape=False, **self.kwargs)
         return torch.from_numpy(volume)
 
+class RandomTranspose(MultiTransform):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def get_args_(self) -> Tuple[Tuple]:
+        return (tuple([(d0, d1) for d0, d1 in ((-3, -2), (-3, -1), (-2, -1)) if choice([True, False])]), )
+    
+    def transform_(self, volume: Any, axes: tuple[int]) -> Any:
+        for d0, d1 in axes:
+            volume = torch.transpose(volume, d0, d1)
+        return volume
+
 
 class Standardize(MultiTransform):
     def __init__(self, mean, std) -> None:
