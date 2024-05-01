@@ -1,7 +1,7 @@
 #!/bin/sh
 #BSUB -J hw_experiment
 #BSUB -o job_info/hw_experiment_%J.out
-#BSUB -q gpua100
+#BSUB -q gpuv100
 #BSUB -n 4
 # #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
@@ -19,4 +19,9 @@ source ~/context/bin/activate
 export CUDA_VISIBLE_DEVICES=0
 export TQDM_DISABLE=1
 
-python train.py --model_type "r18" --lr 1e-4 --batch_size 16 --lr_patience 90 --patience 135 --num_workers 4 --sp_loss --sp_lw "constant" --sp_weight 1 --wandb
+# python train.py --model_type "r18" --lr 1e-4 --batch_size 16 --lr_patience 100 --patience 150 --num_workers 4 --sp_loss --sp_lw "constant" --sp_weight 1 --sp_normalize --smooth_mode "ma" --n_smooth 10 --wandb
+# python train.py --model_type "r18" --lr 1e-4 --batch_size 16 --lr_patience 100 --patience 150 --num_workers 4 --sp_loss --sp_lw "constant" --sp_weight 1 --sp_normalize --sp_binary --smooth_mode "ma" --n_smooth 10 --wandb
+# python train.py --model_type "r18" --lr 1e-4 --batch_size 16 --lr_patience 100 --patience 150 --num_workers 4 --sp_loss --sp_lw "constant" --sp_weight 0.25 --sp_normalize --sp_binary --wandb
+python train.py --model_type "r18" --lr 1e-4 --batch_size 16 --lr_patience 100 --patience 150 --num_workers 4 --sp_loss --sp_lw "geometric" --sp_weight 1.0 --sp_normalize --sp_binary --wandb
+# python train.py --model_type "r18" --lr 1e-4 --batch_size 16 --lr_patience 100 --patience 150 --num_workers 4 --sp_loss --sp_lw "geometric" --sp_weight 0.5 --sp_normalize --smooth_mode "ma" --n_smooth 10 --wandb
+# python train.py --model_type "r18" --lr 1e-4 --batch_size 16 --lr_patience 100 --patience 150 --warmup 400 --num_workers 4 --wandb
