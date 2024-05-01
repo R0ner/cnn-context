@@ -81,8 +81,6 @@ class BNSetMasks(BNSet):
         self.masks = []
 
         for idx, name in enumerate(sorted(os.listdir(self.mask_dir))):
-            if self.subset is not None and name.lower() not in self.subset:
-                continue
             mask_paths = list(
                 filter(
                     lambda f: f.endswith(".tif"),
