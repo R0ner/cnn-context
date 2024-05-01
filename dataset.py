@@ -108,7 +108,7 @@ class HWSetMasks(HWSet):
         if self.transform_img is not None:
             img = self.transform_img(img)
 
-        return img, self.labels[item], mask, None
+        return img, self.labels[item], mask, torch.empty(0)
 
 
 class HWSetNoise(HWSetMasks):

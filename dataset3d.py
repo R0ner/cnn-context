@@ -53,18 +53,19 @@ class BNSet(Dataset):
 
         self.labels = np.array(self.labels)
 
-        self.pad = lambda volume: np.pad(volume, ((0, 0), (32, 32), (32, 32)))
-
+    def pad(self, volume):
+        return np.pad(volume, ((0, 0), (32, 32), (32, 32)))
+    
     def __len__(self):
         return self.labels.size
-
+     
     def __getitem__(self, item):
         volume = self.pad(imread(self.volumes[item]))[np.newaxis]
 
         if self.transform is not None:
             volume = self.transform(volume)
 
-        return volume, self.labels[item]
+        return volume, self.labels[item], torch.empty(0), torch.empty(0)
 
 
 class BNSetMasks(BNSet):
@@ -107,7 +108,7 @@ class BNSetMasks(BNSet):
         if self.transform_vol is not None:
             volume = self.transform_vol(volume)
 
-        return volume, self.labels[item], mask
+        return volume, self.labels[item], mask, torch.empty(0)
 
 
 class BNSetNoise(BNSetMasks):
@@ -127,24 +128,33 @@ class BNSetNoise(BNSetMasks):
         self.val_noise_path = f"{self.data_dir}/single_val_noise.npy"
         self.test_noise_path = f"{self.data_dir}/single_test_noise.npy"
 
+        self.noise = None
         if self.split == "val":
-            self.noise = np.load(self.val_noise_path, mmap_mode="r")
             self.noise_sampler = self.sampler
         elif self.split == "test":
-            self.noise = np.load(self.test_noise_path, mmap_mode="r")
             self.noise_sampler = self.sampler
         elif self.split == "train":
-            self.noise = np.load(self.train_noise_path, mmap_mode="r")
             self.noise_sampler = self.rand_sampler
+    
+    def load_noise(self):
+        if self.noise is None:
+            if self.split == "val":
+                self.noise = np.load(self.val_noise_path, mmap_mode="r")
+            elif self.split == "test":
+                self.noise = np.load(self.test_noise_path, mmap_mode="r")
+            elif self.split == "train":
+                self.noise = np.load(self.train_noise_path, mmap_mode="r")
 
     def sampler(self, item):
+        self.load_noise()
         return self.noise[item]
 
     def rand_sampler(self, item):
-        return self.noise[randint(0, self.noise.shape[0] - 1)]
+        self.load_noise()
+        return self.noise[np.random.randint(0, self.noise.shape[0] - 1)]
 
     def __getitem__(self, item):
-        volume, label, mask = super().__getitem__(item)
+        volume, label, mask, _ = super().__getitem__(item)
 
         noise = self.noise_sampler(item).copy()[np.newaxis]
 
