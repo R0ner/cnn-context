@@ -67,13 +67,14 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--patience", default=40, type=int)
     parser.add_argument("--smooth_mode", default="", type=str)
     parser.add_argument("--n_smooth", default=10, type=int)
+    parser.add_argument("--warmup", default=400, type=int)
 
     # Multiprocessing
     parser.add_argument("--num_workers", default=0, type=int)
 
     # Saving
     parser.add_argument("--save_every", default=100, type=int)
-
+    
     # weights and biases
     parser.add_argument("--wandb", action="store_true")
     return parser
@@ -115,6 +116,7 @@ if __name__ == "__main__":
     smooth_mode = args.smooth_mode
     n_smooth = args.n_smooth
     smooth = len(smooth_mode) > 0
+    warmup = args.warmup
 
     # Checkpoints
     save_every = 100
@@ -327,8 +329,9 @@ if __name__ == "__main__":
             print(f"Train performance: {performance_train}")
             print(f"Val performance: {performance_val}")
 
-            lr_schedulers[k].step(performance_val["mean_loss_total"])
-            stop[k] = earlystoppers[k](performance_val["mean_loss_total"])
+            if epoch >= warmup:
+                lr_schedulers[k].step(performance_val["mean_loss_total"])
+                stop[k] = earlystoppers[k](performance_val["mean_loss_total"])
 
             log_stats = (
                 log_stats
