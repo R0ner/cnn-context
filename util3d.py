@@ -19,19 +19,25 @@ name_legend = {
 }
 
 
-def show_volume(volume, label=None, size=1, **kwargs):
+def show_volume(volume, label=None, size=1, fig_axs=None, title=None, **kwargs):
     if isinstance(volume, torch.Tensor):
         volume = volume.numpy()
     volume = np.squeeze(volume)
-    fig, (ax0, ax1, ax2) = plt.subplots(
-        1, 3, figsize=(size * 6, size * 3), tight_layout=True
-    )
-    if label is not None:
-        fig.suptitle(list(name_legend.values())[label].replace("_", " "))
-    ax0.imshow(volume.max(0), **kwargs)
-    ax1.imshow(volume.max(1), **kwargs)
-    ax2.imshow(volume.max(2), **kwargs)
-    plt.show()
+    if fig_axs is None:
+        fig, axs = plt.subplots(
+            1, 3, figsize=(size * 3, size * 3), tight_layout=True
+        )
+    else:
+        fig, axs = fig_axs
+    if label is not None and title is None:
+        title = list(name_legend.values())[label].replace("_", " ")
+        fig.suptitle(title)
+    if title is not None:
+        fig.suptitle(title)
+    for i, ax in enumerate(axs):
+        ax.imshow(volume.max(i), **kwargs)
+    if fig_axs is None:
+        plt.show()
 
 
 def get_saliency3d(model, volumes, device="cpu"):
@@ -55,11 +61,12 @@ def get_obj_score3d(slc, masks):
     N = mask.shape[0] * mask.shape[1] * mask.shape[2]
     N_obj = mask.sum()
     N_bg = N - N_obj
-
+    
     slc_abs = np.abs(slc)
 
     obj_slc_score = slc_abs[mask].sum() / N_obj
     obj_score = obj_slc_score / (
-        obj_slc_score + slc_abs[~mask].sum() / N_bg
+        obj_slc_score + slc_abs[~mask].sum() / N_bg + 1e-7
     )
+
     return obj_score
