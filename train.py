@@ -52,10 +52,11 @@ def get_args_parser() -> argparse.ArgumentParser:
         help="Weight given to the superpixel loss.",
     )
     parser.add_argument(
-        "--sp_lw", type=str, default="constant", help="Layer weighting scheme"
+        "--sp_lw", type=str, default="constant", help="Layer weighting scheme: ['constant', 'geometric']"
     )
     parser.add_argument("--sp_normalize", action="store_true")
     parser.add_argument("--sp_binary", action="store_true")
+    parser.add_argument("--sp_binary_th", default=0.5, type=float)
 
     # Model parameters
     parser.add_argument(
@@ -157,6 +158,7 @@ if __name__ == "__main__":
             layer_weights=args.sp_lw,
             normalize=args.sp_normalize,
             binary=args.sp_binary,
+            binary_threshold=args.sp_binary_th,
             device=device,
         )
 
