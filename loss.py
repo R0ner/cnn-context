@@ -10,11 +10,13 @@ class SuperpixelWeights:
         model_type: str,
         normalize: bool = True,
         binary: bool = False,
+        binary_threshold: float = 0.5,
         device: str = "cpu",
     ) -> None:
         self.model_type = model_type
         self.normalize = normalize
         self.binary = binary
+        self.binary_threshold = binary_threshold
         self.device = device
 
         if self.model_type != "r18":
@@ -83,7 +85,7 @@ class SuperpixelWeights:
             sp_weights = self.sp_normalize(sp_weights)
 
         if self.binary:
-            sp_weights = list(map(lambda sp_w: (sp_w > 0.5).float(), sp_weights))
+            sp_weights = list(map(lambda sp_w: (sp_w > self.binary_threshold).float(), sp_weights))
 
         return sp_weights
 
@@ -96,6 +98,7 @@ class SuperpixelCriterion:
         layer_weights: str = "constant",
         normalize: bool = True,
         binary: bool = False,
+        binary_threshold: float = 0.5,
         device: str = "cpu",
     ) -> None:
         self.model_type = model_type
@@ -103,6 +106,7 @@ class SuperpixelCriterion:
         self.layer_weights = layer_weights.lower()
         self.normalize = normalize
         self.binary = binary
+        self.binary_threshold = binary_threshold
         self.device = device
 
         self.layer_weight_schemes = ("constant", "geometric")
@@ -115,6 +119,7 @@ class SuperpixelCriterion:
             self.model_type,
             normalize=self.normalize,
             binary=self.binary,
+            binary_threshold=self.binary_threshold,
             device=self.device,
         )
         self.ce_criterion = nn.CrossEntropyLoss()  # Cross entropy
