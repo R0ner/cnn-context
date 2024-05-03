@@ -145,7 +145,7 @@ class BNSetNoise(BNSetMasks):
 
     def sampler(self, item):
         self.load_noise()
-        return self.noise[item]
+        return self.noise[item % self.noise.shape[0]]
 
     def rand_sampler(self, item):
         self.load_noise()
