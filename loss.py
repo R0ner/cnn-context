@@ -99,6 +99,7 @@ class SuperpixelCriterion:
         normalize: bool = True,
         binary: bool = False,
         binary_threshold: float = 0.5,
+        mode: str = 'l2',
         device: str = "cpu",
     ) -> None:
         self.model_type = model_type
@@ -107,13 +108,18 @@ class SuperpixelCriterion:
         self.normalize = normalize
         self.binary = binary
         self.binary_threshold = binary_threshold
+        self.mode = mode
         self.device = device
 
+        self.modes = ('l1', 'l2')
         self.layer_weight_schemes = ("constant", "geometric")
 
         assert (
             self.layer_weights in self.layer_weight_schemes
-        ), f"layer_weights must be one of {self.layer_weight_schemes}"
+        ), f"'layer_weights' must be one of {self.layer_weight_schemes}"
+        assert (
+            self.mode in self.modes
+        ), f"'mode' must be one of {self.modes}"
 
         self.get_sp_weights = SuperpixelWeights(
             self.model_type,
@@ -126,8 +132,13 @@ class SuperpixelCriterion:
 
         if self.layer_weights == "constant":
             self.get_layer_weight = lambda i: 1
-        if self.layer_weights == "geometric":
+        elif self.layer_weights == "geometric":
             self.get_layer_weight = lambda i: 2 ** (-i)
+        
+        if self.mode == 'l1':
+            self.sp_loss_func = torch.abs # Could use 'identity' instead in case of ReLU.
+        elif self.mode == 'l2':
+            self.sp_loss_func = torch.square
 
     def __call__(
         self, outs: list[torch.tensor], targets: torch.tensor, masks: torch.tensor
@@ -144,7 +155,7 @@ class SuperpixelCriterion:
             loss += (
                 layer_weight
                 * (
-                    (sp_w * torch.square(sp)).view(sp.size(0), -1).sum(1)
+                    (sp_w * self.sp_loss_func(sp)).view(sp.size(0), -1).sum(1)
                     / (sp_w.view(sp.size(0), -1).sum(1) * sp_w[0].numel() + 1e-7)
                 ).mean()
             )

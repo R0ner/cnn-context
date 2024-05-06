@@ -57,6 +57,7 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sp_normalize", action="store_true")
     parser.add_argument("--sp_binary", action="store_true")
     parser.add_argument("--sp_binary_th", default=0.5, type=float)
+    parser.add_argument("--sp_mode", default='l2', type=str, help="One of ['l1', 'l2'] (see L1 and L2 norm).")
 
     # Model parameters
     parser.add_argument(
@@ -159,6 +160,7 @@ if __name__ == "__main__":
             normalize=args.sp_normalize,
             binary=args.sp_binary,
             binary_threshold=args.sp_binary_th,
+            mode=args.sp_mode,
             device=device,
         )
 
