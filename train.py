@@ -40,6 +40,7 @@ def get_model(model_type, device="cpu", seed=191510):
 def get_args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("HW experiment hyperparameters", add_help=False)
     parser.add_argument("--lr", default=1e-3, type=float)
+    parser.add_argument("--wd", default=0.0, type=float)
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--epochs", default=1000, type=int)
 
@@ -103,6 +104,7 @@ if __name__ == "__main__":
 
     # Optimizer
     lr = args.lr
+    weight_decay = args.wd
 
     # Training
     n_epochs = args.epochs
@@ -166,7 +168,7 @@ if __name__ == "__main__":
 
     # Optimizers
     optimizers = {
-        k: torch.optim.Adam(model.parameters(), lr=lr) for k, model in models.items()
+        k: torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay) for k, model in models.items()
     }
 
     # Learning rate schedulers
@@ -366,7 +368,8 @@ if __name__ == "__main__":
                         os.remove(f"{save_dir_models[k]}/{f}")
 
         # Save checkpoints
-        save = (epoch + 1) % save_every == 0 or (epoch + 1) == n_epochs
+        # save = (epoch + 1) % save_every == 0 or (epoch + 1) == n_epochs
+        save = (epoch + 1) == n_epochs
 
         for k in names:
             if (save or len(suffix[k]) or stop[k]) and not completed[k]:
@@ -376,7 +379,7 @@ if __name__ == "__main__":
                 )
 
         # Save stats
-        if save:
+        if (epoch + 1) % 10 == 0:
             stats_df = pd.DataFrame.from_dict(all_stats, orient="index")
             stats_df.to_csv(f"{save_dir}/stats.csv")
 
