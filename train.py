@@ -6,14 +6,14 @@ import time
 import numpy as np
 import pandas as pd
 import torch
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.models import resnet18, resnet50
 from tqdm import tqdm
 
 import wandb
 from dataset import get_dloader, normalize_hw, normalize_hw_mask
 from loss import SuperpixelCriterion
-from scheduler import EarlyStopper, EarlyStopperSmooth, ReduceLROnPlateauSmooth
+from scheduler import (EarlyStopper, EarlyStopperSmooth,
+                       ReduceLROnPlateauSmooth, ReduceLROnPlateauWU)
 from util import DummyModel, eval_step, get_performance, train_step
 
 # Random seed
@@ -53,12 +53,20 @@ def get_args_parser() -> argparse.ArgumentParser:
         help="Weight given to the superpixel loss.",
     )
     parser.add_argument(
-        "--sp_lw", type=str, default="constant", help="Layer weighting scheme: ['constant', 'geometric']"
+        "--sp_lw",
+        type=str,
+        default="constant",
+        help="Layer weighting scheme: ['constant', 'geometric']",
     )
     parser.add_argument("--sp_normalize", action="store_true")
     parser.add_argument("--sp_binary", action="store_true")
     parser.add_argument("--sp_binary_th", default=0.5, type=float)
-    parser.add_argument("--sp_mode", default='l2', type=str, help="One of ['l1', 'l2'] (see L1 and L2 norm).")
+    parser.add_argument(
+        "--sp_mode",
+        default="l2",
+        type=str,
+        help="One of ['l1', 'l2'] (see L1 and L2 norm).",
+    )
 
     # Model parameters
     parser.add_argument(
@@ -77,7 +85,7 @@ def get_args_parser() -> argparse.ArgumentParser:
 
     # Saving
     parser.add_argument("--save_every", default=100, type=int)
-    
+
     # weights and biases
     parser.add_argument("--wandb", action="store_true")
     return parser
@@ -140,9 +148,9 @@ if __name__ == "__main__":
     for dir in (save_dir, *save_dir_models.values()):
         if not os.path.exists(dir):
             os.mkdir(dir)
-    
+
     # Save args.
-    with open(f'{save_dir}/config.json', 'w') as f:
+    with open(f"{save_dir}/config.json", "w") as f:
         json.dump(args.__dict__, f, indent=6)
 
     # Set manual seed!
@@ -168,7 +176,8 @@ if __name__ == "__main__":
 
     # Optimizers
     optimizers = {
-        k: torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay) for k, model in models.items()
+        k: torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        for k, model in models.items()
     }
 
     # Learning rate schedulers
@@ -180,10 +189,15 @@ if __name__ == "__main__":
             n_smooth=n_smooth,
             factor=factor,
             patience=lr_patience,
+            warmup=warmup,
         )
     else:
-        get_lr_scheduler = lambda optimizer: ReduceLROnPlateau(
-            optimizer, mode="min", factor=factor, patience=lr_patience
+        get_lr_scheduler = lambda optimizer: ReduceLROnPlateauWU(
+            optimizer,
+            mode="min",
+            factor=factor,
+            patience=lr_patience,
+            warmup=warmup,
         )
     lr_schedulers = {
         k: get_lr_scheduler(optimizer) for k, optimizer in optimizers.items()
@@ -192,10 +206,18 @@ if __name__ == "__main__":
     # Early stopping
     if smooth:
         get_early_stopper = lambda: EarlyStopperSmooth(
-            mode="min", patience=patience, smooth_mode=smooth_mode, n_smooth=n_smooth
+            mode="min",
+            patience=patience,
+            smooth_mode=smooth_mode,
+            n_smooth=n_smooth,
+            warmup=warmup,
         )
     else:
-        get_early_stopper = lambda: EarlyStopper(mode="min", patience=patience)
+        get_early_stopper = lambda: EarlyStopper(
+            mode="min",
+            patience=patience,
+            warmup=warmup,
+        )
     earlystoppers = {k: get_early_stopper() for k in names}
 
     persistent_workers = num_workers > 0
@@ -335,9 +357,8 @@ if __name__ == "__main__":
             print(f"Train performance: {performance_train}")
             print(f"Val performance: {performance_val}")
 
-            if epoch >= warmup:
-                lr_schedulers[k].step(performance_val["mean_loss_total"])
-                stop[k] = earlystoppers[k](performance_val["mean_loss_total"])
+            lr_schedulers[k].step(performance_val["mean_loss_total"])
+            stop[k] = earlystoppers[k](performance_val["mean_loss_total"])
 
             log_stats = (
                 log_stats

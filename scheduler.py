@@ -26,7 +26,41 @@ class Smoother:
         return self.get_smooth_metric(self.metrics_history)
 
 
-class ReduceLROnPlateauSmooth(ReduceLROnPlateau):
+class ReduceLROnPlateauWU(ReduceLROnPlateau):
+    def __init__(
+        self,
+        optimizer: Optimizer,
+        mode: str = "min",
+        factor: float = 0.1,
+        patience: int = 10,
+        threshold: float = 1e-4,
+        threshold_mode: str = "rel",
+        cooldown: int = 0,
+        min_lr: List[float] | float = 0,
+        eps: float = 1e-8,
+        warmup: int = 0,
+    ) -> None:
+        super().__init__(
+            optimizer,
+            mode,
+            factor,
+            patience,
+            threshold,
+            threshold_mode,
+            cooldown,
+            min_lr,
+            eps,
+        )
+        self.warmup = warmup
+        self.steps = 0
+
+    def step(self, metric: Any) -> None:
+        self.steps += 1
+        if self.steps > self.warmup:
+            return super().step(metric)
+
+
+class ReduceLROnPlateauSmooth(ReduceLROnPlateauWU):
     def __init__(
         self,
         optimizer: Optimizer,
@@ -40,6 +74,7 @@ class ReduceLROnPlateauSmooth(ReduceLROnPlateau):
         cooldown: int = 0,
         min_lr: List[float] | float = 0,
         eps: float = 1e-8,
+        warmup: int = 0,
     ) -> None:
         super().__init__(
             optimizer,
@@ -51,6 +86,7 @@ class ReduceLROnPlateauSmooth(ReduceLROnPlateau):
             cooldown,
             min_lr,
             eps,
+            warmup,
         )
         self.smoother = Smoother(smooth_mode=smooth_mode, n_smooth=n_smooth)
 
@@ -61,36 +97,42 @@ class ReduceLROnPlateauSmooth(ReduceLROnPlateau):
 
 
 class EarlyStopper:
-    def __init__(self, mode="min", patience=5) -> None:
+    def __init__(self, mode="min", patience=5, warmup=0) -> None:
         assert mode in ("min", "max")
         self.mode = mode
         self.patience = patience
         self.best = None
         self.counter = None
+        self.steps = None
+        self.warmup = warmup
         self.reset()
 
     def reset(self) -> None:
         self.best = float("inf") if self.mode == "min" else -float("inf")
         self.counter = 0
+        self.steps = 0
 
     def __call__(self, metric: float) -> bool:
         stop = False
+
+        self.steps += 1
+
+        if self.steps < self.warmup:
+            return stop
+
         if self.mode == "min":
-            if metric < self.best:
-                self.best = metric
-                self.counter = 0
-            else:
-                self.counter += 1
-                if self.counter >= self.patience:
-                    stop = True
+            update_best = metric < self.best
         elif self.mode == "max":
-            if metric > self.best:
-                self.best = metric
-                self.counter = 0
-            else:
-                self.counter += 1
-                if self.counter >= self.patience:
-                    stop = True
+            update_best = metric > self.best
+
+        if update_best:
+            self.best = metric
+            self.counter = 0
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                stop = True
+
         return stop
 
 
@@ -99,10 +141,11 @@ class EarlyStopperSmooth(EarlyStopper):
         self,
         mode="min",
         patience=5,
+        warmup=0,
         smooth_mode: str = "ma",
         n_smooth: int = 10,
     ) -> None:
-        super().__init__(mode, patience)
+        super().__init__(mode, patience, warmup)
         self.smoother = Smoother(smooth_mode=smooth_mode, n_smooth=n_smooth)
 
     def __call__(self, metric: float) -> bool:
