@@ -104,13 +104,12 @@ class SuperpixelWeightsExact:
         if self.model_type != "r18":
             raise NotImplementedError
 
-        self.scale_factors = [2**(-i) for i in range(1, 6)]
-
     def __call__(self, masks: torch.tensor) -> list[torch.tensor]:
-
+        h, w = masks.shape[-2:]
         sp_weights = []
-        for scale_factor in self.scale_factors:
-            sp_weights.append((interpolate(masks.float(), scale_factor=scale_factor, mode='bilinear', antialias=True) > 0.1).float())
+        for _ in range(5):
+            h, w = h // 2 + h % 2, w // 2 + w % 2
+            sp_weights.append((interpolate(masks.float(), size=(h, w), mode='bilinear', antialias=True) > 0.1).float())
 
         return sp_weights
 
