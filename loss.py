@@ -1,6 +1,7 @@
 from typing import Any
 
 import torch
+from skimage.transform import resize
 from torch import nn
 
 
@@ -85,7 +86,41 @@ class SuperpixelWeights:
             sp_weights = self.sp_normalize(sp_weights)
 
         if self.binary:
-            sp_weights = list(map(lambda sp_w: (sp_w > self.binary_threshold).float(), sp_weights))
+            sp_weights = list(
+                map(lambda sp_w: (sp_w > self.binary_threshold).float(), sp_weights)
+            )
+
+        return sp_weights
+
+
+class SuperpixelWeightsExact:
+    def __init__(
+        self, model_type: str, anti_aliasing: bool = True, device: str = "cpu"
+    ) -> None:
+        self.model_type = model_type
+        self.anti_aliasing = anti_aliasing
+        self.device = device
+
+        if self.model_type != "r18":
+            raise NotImplementedError
+
+        # self.resize_factors = [2**(i) for i in range(1, 6)]
+
+    def __call__(self, masks: torch.tensor) -> list[torch.tensor]:
+        h, w = masks.shape[-2:]
+
+        sp_weights = []
+        for _ in range(5):
+            h, w = h // 2 + h % 2, w // 2 + w % 2
+            sp_w = masks.cpu().squeeze().transpose(0, -1).numpy().astype(float)
+            sp_w = (
+                torch.from_numpy((resize(sp_w, (w, h), anti_aliasing=self.anti_aliasing) > 0.1).astype(float))
+                .transpose(-1, 0)
+                .unsqueeze(1)
+                .contiguous()
+                .to(self.device)
+            )
+            sp_weights.append(sp_w)
 
         return sp_weights
 
@@ -96,48 +131,55 @@ class SuperpixelCriterion:
         model_type: str,
         sp_loss_weight: float = 1,
         layer_weights: str = "constant",
+        exact: bool = False,
         normalize: bool = True,
         binary: bool = False,
         binary_threshold: float = 0.5,
-        mode: str = 'l2',
+        mode: str = "l2",
         device: str = "cpu",
     ) -> None:
         self.model_type = model_type
         self.sp_loss_weight = sp_loss_weight
         self.layer_weights = layer_weights.lower()
+        self.exact = exact
         self.normalize = normalize
         self.binary = binary
         self.binary_threshold = binary_threshold
         self.mode = mode
         self.device = device
 
-        self.modes = ('l1', 'l2')
+        self.modes = ("l1", "l2")
         self.layer_weight_schemes = ("constant", "geometric")
 
         assert (
             self.layer_weights in self.layer_weight_schemes
         ), f"'layer_weights' must be one of {self.layer_weight_schemes}"
-        assert (
-            self.mode in self.modes
-        ), f"'mode' must be one of {self.modes}"
+        assert self.mode in self.modes, f"'mode' must be one of {self.modes}"
 
-        self.get_sp_weights = SuperpixelWeights(
-            self.model_type,
-            normalize=self.normalize,
-            binary=self.binary,
-            binary_threshold=self.binary_threshold,
-            device=self.device,
-        )
+        if self.exact:
+            self.get_sp_weights = SuperpixelWeightsExact(
+                self.model_type, anti_aliasing=True, device=self.device
+            )
+        else:
+            self.get_sp_weights = SuperpixelWeights(
+                self.model_type,
+                normalize=self.normalize,
+                binary=self.binary,
+                binary_threshold=self.binary_threshold,
+                device=self.device,
+            )
         self.ce_criterion = nn.CrossEntropyLoss()  # Cross entropy
 
         if self.layer_weights == "constant":
             self.get_layer_weight = lambda i: 1
         elif self.layer_weights == "geometric":
             self.get_layer_weight = lambda i: 2 ** (-i)
-        
-        if self.mode == 'l1':
-            self.sp_loss_func = torch.abs # Could use 'identity' instead in case of ReLU.
-        elif self.mode == 'l2':
+
+        if self.mode == "l1":
+            self.sp_loss_func = (
+                torch.abs
+            )  # Could use 'identity' instead in case of ReLU.
+        elif self.mode == "l2":
             self.sp_loss_func = torch.square
 
     def __call__(
@@ -156,7 +198,7 @@ class SuperpixelCriterion:
                 layer_weight
                 * (
                     (sp_w * self.sp_loss_func(sp)).view(sp.size(0), -1).sum(1)
-                    / (sp_w.view(sp.size(0), -1).sum(1) * sp_w[0].numel() + 1e-7)
+                    / (sp_w.view(sp.size(0), -1).sum(1) * sp.size(1) + 1e-7)
                 ).mean()
             )
 

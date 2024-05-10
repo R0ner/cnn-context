@@ -61,6 +61,7 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sp_normalize", action="store_true")
     parser.add_argument("--sp_binary", action="store_true")
     parser.add_argument("--sp_binary_th", default=0.5, type=float)
+    parser.add_argument("--sp_exact", action="store_true")
     parser.add_argument(
         "--sp_mode",
         default="l2",
@@ -167,6 +168,7 @@ if __name__ == "__main__":
             model_type,
             sp_loss_weight=args.sp_weight,
             layer_weights=args.sp_lw,
+            exact=args.exact,
             normalize=args.sp_normalize,
             binary=args.sp_binary,
             binary_threshold=args.sp_binary_th,
