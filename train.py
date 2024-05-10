@@ -168,7 +168,7 @@ if __name__ == "__main__":
             model_type,
             sp_loss_weight=args.sp_weight,
             layer_weights=args.sp_lw,
-            exact=args.exact,
+            exact=args.sp_exact,
             normalize=args.sp_normalize,
             binary=args.sp_binary,
             binary_threshold=args.sp_binary_th,

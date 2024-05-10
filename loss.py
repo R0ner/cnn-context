@@ -109,7 +109,7 @@ class SuperpixelWeightsExact:
         sp_weights = []
         for _ in range(5):
             h, w = h // 2 + h % 2, w // 2 + w % 2
-            sp_weights.append((interpolate(masks.float(), size=(h, w), mode='bilinear', antialias=True) > 0.1).float())
+            sp_weights.append((~(interpolate(masks.float(), size=(h, w), mode='bilinear', antialias=True) > 0.1)).float())
 
         return sp_weights
 
