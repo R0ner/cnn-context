@@ -1,8 +1,8 @@
 from typing import Any
 
 import torch
-from skimage.transform import resize
 from torch import nn
+from torch.nn.functional import interpolate
 
 
 class SuperpixelWeights:
@@ -104,23 +104,13 @@ class SuperpixelWeightsExact:
         if self.model_type != "r18":
             raise NotImplementedError
 
-        # self.resize_factors = [2**(i) for i in range(1, 6)]
+        self.scale_factors = [2**(-i) for i in range(1, 6)]
 
     def __call__(self, masks: torch.tensor) -> list[torch.tensor]:
-        h, w = masks.shape[-2:]
 
         sp_weights = []
-        for _ in range(5):
-            h, w = h // 2 + h % 2, w // 2 + w % 2
-            sp_w = masks.cpu().squeeze().transpose(0, -1).numpy().astype(float)
-            sp_w = (
-                torch.from_numpy((resize(sp_w, (w, h), anti_aliasing=self.anti_aliasing) > 0.1).astype(float))
-                .transpose(-1, 0)
-                .unsqueeze(1)
-                .contiguous()
-                .to(self.device)
-            )
-            sp_weights.append(sp_w)
+        for scale_factor in self.scale_factors:
+            sp_weights.append((interpolate(masks.float(), scale_factor=scale_factor, mode='bilinear', antialias=True) > 0.1).float())
 
         return sp_weights
 
