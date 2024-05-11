@@ -137,7 +137,7 @@ class SuperpixelCriterion:
         self.mode = mode
         self.device = device
 
-        self.modes = ("l1", "l2")
+        self.modes = ("l1", "l2", "elastic")
         self.layer_weight_schemes = ("constant", "geometric")
 
         assert (
@@ -170,6 +170,8 @@ class SuperpixelCriterion:
             )  # Could use 'identity' instead in case of ReLU.
         elif self.mode == "l2":
             self.sp_loss_func = torch.square
+        elif self.mode == "elastic":
+            self.sp_loss_func = lambda x: torch.square(x) + torch.abs(x)
 
     def __call__(
         self, outs: list[torch.tensor], targets: torch.tensor, masks: torch.tensor
