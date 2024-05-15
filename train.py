@@ -143,6 +143,9 @@ if __name__ == "__main__":
     names = ("a", "b", "c")
 
     save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
+    
+    while os.path.exists(save_dir):
+        save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
 
     save_dir_models = {k: f"{save_dir}/{k}" for k in names}
 
