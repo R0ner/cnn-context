@@ -171,7 +171,7 @@ class SuperpixelCriterion:
         elif self.mode == "l2":
             self.sp_loss_func = torch.square
         elif self.mode == "elastic":
-            self.sp_loss_func = lambda x: torch.square(x) + torch.abs(x)
+            self.sp_loss_func = lambda x: (torch.square(x) + torch.abs(x)) / 2
 
     def __call__(
         self, outs: list[torch.tensor], targets: torch.tensor, masks: torch.tensor
