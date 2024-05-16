@@ -109,7 +109,16 @@ class SuperpixelWeightsExact:
         sp_weights = []
         for _ in range(5):
             h, w = h // 2 + h % 2, w // 2 + w % 2
-            sp_weights.append((~(interpolate(masks.float(), size=(h, w), mode='bilinear', antialias=True) > 0.1)).float())
+            sp_weights.append(
+                (
+                    ~(
+                        interpolate(
+                            masks.float(), size=(h, w), mode="bilinear", antialias=True
+                        )
+                        > 0.1
+                    )
+                ).float()
+            )
 
         return sp_weights
 
@@ -163,11 +172,12 @@ class SuperpixelCriterion:
             self.get_layer_weight = lambda i: 1
         elif self.layer_weights == "geometric":
             self.get_layer_weight = lambda i: 2 ** (-i)
+        elif self.layer_weights == "last":
+            self.get_layer_weight = lambda i: i == 0
 
         if self.mode == "l1":
-            self.sp_loss_func = (
-                torch.abs
-            )  # Could use 'identity' instead in case of ReLU.
+            # Could use 'identity' instead in case of ReLU.
+            self.sp_loss_func = torch.abs
         elif self.mode == "l2":
             self.sp_loss_func = torch.square
         elif self.mode == "elastic":
@@ -176,15 +186,21 @@ class SuperpixelCriterion:
     def __call__(
         self, outs: list[torch.tensor], targets: torch.tensor, masks: torch.tensor
     ) -> torch.tensor:
+        
+        # Get feature weights for each layer according to "mode"
         sp_weights = self.get_sp_weights(masks)
         n_layers = len(sp_weights)
 
         layer_weight_sum = 0
         loss = 0
         for i, (sp, sp_w) in enumerate(zip(outs[:-1], sp_weights)):
-            layer_weight = self.get_layer_weight(n_layers - i)
+            layer_weight = self.get_layer_weight(n_layers - i - 1)
             layer_weight_sum += layer_weight
 
+            # g(l) * sum(w * V(sp)) / (sum(w) * (no. channels))
+            # where w is the feature weights, sp are the features, V(x) is the error function, and g(l) is the layer weight.
+            # We multiply by the number of channels (sp.size(1)) in the denominator as w is broadcast for multiplication with V(sp).
+            # The loss is calculated for each item in the batch and finally the mean is taken over the batch.
             loss += (
                 layer_weight
                 * (
@@ -193,8 +209,11 @@ class SuperpixelCriterion:
                 ).mean()
             )
 
+        # Cross entropy loss.
         loss_ce = self.ce_criterion(outs[-1], targets)
 
-        loss = loss / layer_weight_sum * self.sp_loss_weight + loss_ce
+        # L_total = L_ce + lambda * L_feature
+        # where L_ce is the cross entropy loss, lambda is the feature loss weight, and L_feature is the feature loss.
+        loss = loss_ce + loss / layer_weight_sum * self.sp_loss_weight
 
         return loss, loss_ce
