@@ -147,7 +147,7 @@ class SuperpixelCriterion:
         self.device = device
 
         self.modes = ("l1", "l2", "elastic")
-        self.layer_weight_schemes = ("constant", "geometric")
+        self.layer_weight_schemes = ("constant", "geometric", "last")
 
         assert (
             self.layer_weights in self.layer_weight_schemes
