@@ -1,0 +1,27 @@
+#!/bin/sh
+#BSUB -J bn_experiment
+#BSUB -o job_info/bn_experiment_%J.out
+#BSUB -q gpuv100
+#BSUB -n 4
+# #BSUB -R "span[hosts=1]"
+#BSUB -gpu "num=1:mode=exclusive_process"
+#BSUB -W 960
+#BSUB -R "rusage[mem=16384]"
+
+nvidia-smi
+
+# Load the cuda module
+module load cuda/11.6
+
+# Load venv
+source ~/context/bin/activate
+
+export CUDA_VISIBLE_DEVICES=0
+export TQDM_DISABLE=1 # Clean job info
+
+MODEL_TYPE="r18"
+BATCH_SIZE=16
+
+NUM_WORKERS=16
+
+python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs 100 --num_workers $NUM_WORKERS --wandb

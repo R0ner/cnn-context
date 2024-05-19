@@ -6,6 +6,7 @@ import time
 import numpy as np
 import pandas as pd
 import torch
+from torch.optim.lr_scheduler import LinearLR
 from torchvision.models import resnet18, resnet50
 from tqdm import tqdm
 
@@ -143,7 +144,7 @@ if __name__ == "__main__":
     names = ("a", "b", "c")
 
     save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
-    
+
     while os.path.exists(save_dir):
         save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
 
@@ -204,6 +205,9 @@ if __name__ == "__main__":
             patience=lr_patience,
             warmup=warmup,
         )
+    # get_lr_scheduler = lambda optimizer: LinearLR(
+    #     optimizer, start_factor=1.0, end_factor=0.1, total_iters=500
+    # )
     lr_schedulers = {
         k: get_lr_scheduler(optimizer) for k, optimizer in optimizers.items()
     }
