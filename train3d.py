@@ -1,17 +1,21 @@
 import argparse
+import json
 import os
+import random
+import time
 
 import numpy as np
+import pandas as pd
 import torch
 from monai.networks.nets import resnet10, resnet18
 from torch import nn
 from torch.optim import Adam
+from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm
 
 import wandb
-from dataset3d import BNSet, BNSetMasks, get_dloader_mask, get_dloader_noise
-from model3d import CNN3d
-from util3d import get_obj_score3d, get_saliency3d, show_volume
+from dataset3d import get_dloader_noise
+from util3d import get_obj_score3d, get_saliency3d
 
 # Random seed
 seed = 191510
@@ -56,13 +60,16 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("HW experiment hyperparameters", add_help=False)
     parser.add_argument("--lr", default=1e-4, type=float)
     parser.add_argument("--wd", default=0.0, type=float)
-    parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument("--epochs", default=100, type=int)
+    parser.add_argument("--batch_size", default=32, type=int)
+    parser.add_argument("--epochs", default=200, type=int)
 
     # Model parameters
     parser.add_argument(
         "--model_type", type=str, default="r18", help="Model type (r18 or r50)"
     )
+
+    # Learning rate scheduling
+    parser.add_argument("--lr_step", default=100, type=int)
 
     # Perlin
     parser.add_argument("--perlin", action="store_true")
@@ -90,6 +97,11 @@ if __name__ == "__main__":
 
     print(f"Using device: {device}")
 
+    # Set manual seed!
+    torch.manual_seed(seed=seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
     # Hyperparameters
     # Model
     model_type = args.model_type
@@ -113,6 +125,24 @@ if __name__ == "__main__":
     # Use wandb
     use_wandb = args.wandb
 
+    save_dir = (
+        f"/work3/s191510/models/bn-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
+    )
+
+    while os.path.exists(save_dir):
+        save_dir = (
+            f"/work3/s191510/models/bn-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
+        )
+    save_dir_model = f"{save_dir}/cpts"
+    
+    for dir in (save_dir, save_dir_model):
+        if not os.path.exists(dir):
+            os.mkdir(dir)
+
+    # Save args.
+    with open(f"{save_dir}/config.json", "w") as f:
+        json.dump(args.__dict__, f, indent=6)
+
     if use_wandb:
         wandb.init(
             # set the wandb project where this run will be logged
@@ -121,8 +151,6 @@ if __name__ == "__main__":
             config={"architecture": model_types[model_type], "batch_size": batch_size},
         )
 
-    # subset = ["bc", "wo"]
-    # subset = ["ac", "bc", "ml"]
     subset = list(name_legend.keys())
 
     persistent_workers = num_workers > 0
@@ -151,10 +179,14 @@ if __name__ == "__main__":
 
     optimizer = Adam(model.parameters(), lr=lr)
 
+    scheduler = StepLR(optimizer, step_size=100, gamma=0.1)
+
     if perlin:
         get_input = lambda volumes, masks, noise: volumes * masks + ~masks * noise
     else:
         get_input = lambda volumes, masks, noise: volumes * masks
+    
+    best = float('inf')
 
     stats = {}
     for epoch in range(n_epochs):
@@ -205,6 +237,8 @@ if __name__ == "__main__":
             metrics_val["preds"].append(indices.detach().numpy())
             metrics_val["labels"].append(labels.numpy())
             metrics_val["object_scores"].append(obj_score)
+        
+        scheduler.step()
 
         performance = {
             "train_loss": np.mean(metrics_train["loss"]),
@@ -225,10 +259,31 @@ if __name__ == "__main__":
         # WandB
         if use_wandb:
             wandb.log(performance)
+        
+        suffix = ""
+        if (performance["val_loss"] < best):
+            suffix = "_best"
+       
+        # Delete previous best.
+        if len(suffix):
+            for f in os.listdir(save_dir_model):
+                if suffix in f:
+                    os.remove(f"{save_dir_model}/{f}")
 
-        save = (epoch + 1) == n_epochs
-        # if (save or len(suffix[k]) or stop[k]) and not completed[k]:
-        #         torch.save(
-        #             {"epoch": epoch, "model_state_dict": models[k].state_dict()},
-        #             f"{save_dir_models[k]}/{model_type}_e{epoch}{suffix[k]}.cpt",
-        #         )
+
+        best = min(best, performance["val_loss"])
+
+        save = (epoch + 1) == n_epochs or len(suffix)
+
+        if save:
+            torch.save(
+                {"epoch": epoch, "model_state_dict": model.state_dict()},
+                f"{save_dir_model}/{model_type}_e{epoch}{suffix}.cpt",
+            )
+
+        if (epoch + 1) % 10 == 0:
+            stats_df = pd.DataFrame.from_dict(stats, orient="index")
+            stats_df.to_csv(f"{save_dir}/stats.csv")
+    
+    stats_df = pd.DataFrame.from_dict(stats, orient="index")
+    stats_df.to_csv(f"{save_dir}/stats.csv")
