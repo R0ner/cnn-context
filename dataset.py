@@ -264,7 +264,7 @@ def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
         dset = HWSetMasks(
             data_dir,
             split,
-            transform_shared=transform_shared,
+            transform_shared=transform_test,
             transform_img=None,
         )
     dloader = DataLoader(
@@ -294,7 +294,7 @@ def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
         dset = HWSetNoise(
             data_dir,
             split,
-            transform_shared=transform_shared,
+            transform_shared=transform_test,
             transform_img=None,
             transform_noise=None,
         )
@@ -330,16 +330,6 @@ normalize_inv_imgnet = get_normalize_inv(normc_imgnet)
 normalize_inv_hw = get_normalize_inv(normc_hw)
 normalize_inv_hw_mask = get_normalize_inv(normc_hw_mask)
 
-# transform = transforms.Compose(
-#     [
-#         transforms.Resize(256, antialias=True),
-#         transforms.CenterCrop(224),
-#         transforms.ToTensor(),
-#         normalize_imgnet,
-#     ]
-# )
-
-
 totensor = transforms.Compose(
     [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]
 )
@@ -348,11 +338,10 @@ transform_shared = transforms.Compose(
     [transforms.Resize((224, 224), antialias=True), totensor]
 )
 
-# transform_img = transforms.Compose(
-#     [
-#         normalize,
-#     ]
-# )
+transform_test = transforms.Compose([
+    transforms.Resize(224, antialias=True),
+    totensor,
+])
 
 transform_shared_augment = transforms.Compose(
     [
@@ -374,17 +363,8 @@ transform_img_augment = transforms.Compose(
             p=0.4,
         ),
         transforms.RandomGrayscale(p=0.02),
-        # transforms.RandomApply(
-        #     [
-        #         transforms.GaussianBlur(kernel_size=7, sigma=(.1, 1.5))
-        #     ],
-        #     p=0.05
-        # ),
-        # transform_img,
     ]
 )
-
-# transform_noise = transforms.Compose([])
 
 transform_noise_augment = transforms.Compose(
     [
@@ -398,6 +378,5 @@ transform_noise_augment = transforms.Compose(
             ],
             p=0.4,
         ),
-        # transform_noise,
     ]
 )
