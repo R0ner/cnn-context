@@ -7,6 +7,7 @@ import time
 import numpy as np
 import pandas as pd
 import torch
+import torchmetrics
 from monai.networks.nets import resnet10, resnet18
 from torch import nn
 from torch.optim import Adam
@@ -134,7 +135,7 @@ if __name__ == "__main__":
             f"/work3/s191510/models/bn-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
         )
     save_dir_model = f"{save_dir}/cpts"
-    
+
     for dir in (save_dir, save_dir_model):
         if not os.path.exists(dir):
             os.mkdir(dir)
@@ -181,23 +182,32 @@ if __name__ == "__main__":
 
     scheduler = StepLR(optimizer, step_size=100, gamma=0.1)
 
+    # Metrics
+    m_acc = torchmetrics.Accuracy("multiclass", num_classes=len(name_legend))
+    m_auc = torchmetrics.AUROC("multiclass", num_classes=len(name_legend))
+    m_prec = torchmetrics.Precision("multiclass", num_classes=len(name_legend))
+    m_rec = torchmetrics.Recall("multiclass", num_classes=len(name_legend))
+    m_f1 = torchmetrics.F1Score("multiclass", num_classes=len(name_legend))
+
     if perlin:
         get_input = lambda volumes, masks, noise: volumes * masks + ~masks * noise
     else:
         get_input = lambda volumes, masks, noise: volumes * masks
-    
-    best = float('inf')
+
+    best = float("inf")
 
     stats = {}
     for epoch in range(n_epochs):
         metrics_train = {
             "loss": [],
             "preds": [],
+            "scores": [],
             "labels": [],
         }
         metrics_val = {
             "loss": [],
             "preds": [],
+            "scores": [],
             "labels": [],
             "object_scores": [],
         }
@@ -217,6 +227,7 @@ if __name__ == "__main__":
 
             metrics_train["loss"].append(loss.cpu().detach().item())
             metrics_train["preds"].append(indices.detach().numpy())
+            metrics_train["scores"].append(out.softmax(dim=1).cpu().detach())
             metrics_train["labels"].append(labels.numpy())
 
         model.eval()
@@ -235,22 +246,31 @@ if __name__ == "__main__":
 
             metrics_val["loss"].append(loss.cpu().detach().item())
             metrics_val["preds"].append(indices.detach().numpy())
+            metrics_val["scores"].append(out.softmax(dim=1).cpu().detach())
             metrics_val["labels"].append(labels.numpy())
             metrics_val["object_scores"].append(obj_score)
-        
+
         scheduler.step()
+
+        scores_train = torch.concatenate(metrics_train["scores"])
+        scores_val = torch.concatenate(metrics_val["scores"])
+
+        labels_train = torch.from_numpy(np.concatenate(metrics_train["labels"])).long()
+        labels_val = torch.from_numpy(np.concatenate(metrics_val["labels"])).long()
 
         performance = {
             "train_loss": np.mean(metrics_train["loss"]),
-            "train_accuracy": np.mean(
-                np.concatenate(metrics_train["preds"])
-                == np.concatenate(metrics_train["labels"])
-            ).item(),
+            "train_accuracy": m_acc(scores_train, labels_train).item(),
+            "train_auroc": m_auc(scores_train, labels_train).item(),
+            "train_precision": m_prec(scores_train, labels_train).item(),
+            "train_recall": m_rec(scores_train, labels_train).item(),
+            "train_f1score": m_f1(scores_train, labels_train).item(),
             "val_loss": np.mean(metrics_val["loss"]),
-            "val_accuracy": np.mean(
-                np.concatenate(metrics_val["preds"])
-                == np.concatenate(metrics_val["labels"])
-            ).item(),
+            "val_accuracy": m_acc(scores_val, labels_val).item(),
+            "val_auroc": m_auc(scores_val, labels_val).item(),
+            "val_precision": m_prec(scores_val, labels_val).item(),
+            "val_recall": m_rec(scores_val, labels_val).item(),
+            "val_f1score": m_f1(scores_val, labels_val).item(),
             "obj_score": np.mean(metrics_val["object_scores"]),
         }
         print(performance)
@@ -258,18 +278,26 @@ if __name__ == "__main__":
 
         # WandB
         if use_wandb:
-            wandb.log(performance)
-        
+            wandb.log(
+                {
+                    "confmat": wandb.plot.confusion_matrix(
+                        y_true=labels_val.tolist(),
+                        preds=np.concatenate(metrics_val["preds"]).tolist(),
+                        class_names=list(map(lambda k: k.upper(), name_legend.keys())),
+                    ),
+                    **performance,
+                }
+            )
+
         suffix = ""
-        if (performance["val_loss"] < best):
+        if performance["val_loss"] < best:
             suffix = "_best"
-       
+
         # Delete previous best.
         if len(suffix):
             for f in os.listdir(save_dir_model):
                 if suffix in f:
                     os.remove(f"{save_dir_model}/{f}")
-
 
         best = min(best, performance["val_loss"])
 
@@ -284,6 +312,6 @@ if __name__ == "__main__":
         if (epoch + 1) % 10 == 0:
             stats_df = pd.DataFrame.from_dict(stats, orient="index")
             stats_df.to_csv(f"{save_dir}/stats.csv")
-    
+
     stats_df = pd.DataFrame.from_dict(stats, orient="index")
     stats_df.to_csv(f"{save_dir}/stats.csv")
