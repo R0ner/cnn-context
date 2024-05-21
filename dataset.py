@@ -6,7 +6,9 @@ import torch
 import torchvision.transforms.v2 as transforms
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms.v2.functional import pad
+from torchvision.ops import masks_to_boxes
+from torchvision.transforms.v2.functional import pad, to_image
+from torchvision.tv_tensors import BoundingBoxes
 
 
 class HWSet(Dataset):
@@ -70,10 +72,11 @@ class HWSet(Dataset):
 class HWSetMasks(HWSet):
     """Dataset class for returning images with their segmentation masks."""
 
-    def __init__(self, data_dir, split, transform_shared=None, transform_img=None):
+    def __init__(self, data_dir, split, transform_shared=None, transform_img=None, require_bbox=False):
         super().__init__(data_dir, split, None)
         self.transform_shared = transform_shared
         self.transform_img = transform_img
+        self.require_bbox=require_bbox
 
         self.val_mask_dir = f"{self.val_img_dir}_masks"
         self.test_mask_dir = f"{self.test_img_dir}_masks"
@@ -97,6 +100,14 @@ class HWSetMasks(HWSet):
         self.masks = list(filter(os.path.isfile, self.masks))
         self.masks = sorted(self.masks)
 
+        if self.require_bbox:
+            self.call_transform_shared = self.transform_shared
+            self.transform_shared = self.transformwbbox
+        
+    def transformwbbox(self, img, mask):
+        img, bbox, mask = self.call_transform_shared(img, BoundingBoxes(masks_to_boxes(to_image(mask)), format="XYXY", canvas_size=img.size[::-1]), mask)
+        return img, mask
+    
     def __getitem__(self, item):
         img = Image.open(self.imgs[item]).convert("RGB")
         mask = Image.open(self.masks[item])
@@ -121,12 +132,14 @@ class HWSetNoise(HWSetMasks):
         transform_shared=None,
         transform_img=None,
         transform_noise=None,
+        require_bbox=False,
     ):
         super().__init__(
             data_dir,
             split,
             transform_shared=transform_shared,
             transform_img=transform_img,
+            require_bbox=require_bbox
         )
         self.transform_noise = transform_noise
 
@@ -244,6 +257,7 @@ def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
             split,
             transform_shared=transform_shared_augment,
             transform_img=transform_img_augment,
+            require_bbox=True,
         )
         shuffle = True
     else:
@@ -273,6 +287,7 @@ def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
             transform_shared=transform_shared_augment,
             transform_img=transform_img_augment,
             transform_noise=transform_noise_augment,
+            require_bbox=True,
         )
         shuffle = True
     else:
@@ -330,7 +345,7 @@ totensor = transforms.Compose(
 )
 
 transform_shared = transforms.Compose(
-    [transforms.Resize(224, antialias=True), totensor]
+    [transforms.Resize((224, 224), antialias=True), totensor]
 )
 
 # transform_img = transforms.Compose(
@@ -342,15 +357,8 @@ transform_shared = transforms.Compose(
 transform_shared_augment = transforms.Compose(
     [
         transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomApply([transforms.RandomIoUCrop(min_scale=0.08, max_scale=1.0, min_aspect_ratio=0.5, max_aspect_ratio=2.0)], p=0.5),
         transforms.RandomApply([transforms.RandomRotation(45, expand=False)], p=0.3),
-        transforms.RandomApply(
-            [
-                transforms.RandomResizedCrop(
-                    224, scale=(0.3, 1), ratio=(3 / 4, 4 / 3), antialias=True
-                )
-            ],
-            p=0.3,
-        ),
         transform_shared,
     ]
 )
@@ -360,12 +368,12 @@ transform_img_augment = transforms.Compose(
         transforms.RandomApply(
             [
                 transforms.ColorJitter(
-                    brightness=0.3, contrast=0.3, hue=0.1, saturation=0.3
+                    brightness=0.3, contrast=0.3, hue=0.1, saturation=0.1
                 )
             ],
             p=0.4,
         ),
-        transforms.RandomGrayscale(p=0.05),
+        transforms.RandomGrayscale(p=0.02),
         # transforms.RandomApply(
         #     [
         #         transforms.GaussianBlur(kernel_size=7, sigma=(.1, 1.5))
