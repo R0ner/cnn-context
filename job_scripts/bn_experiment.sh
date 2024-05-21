@@ -2,7 +2,7 @@
 #BSUB -J bn_experiment
 #BSUB -o job_info/bn_experiment_%J.out
 #BSUB -q gpuv100
-#BSUB -n 4
+#BSUB -n 16
 # #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -W 960
@@ -20,8 +20,11 @@ export CUDA_VISIBLE_DEVICES=0
 export TQDM_DISABLE=1 # Clean job info
 
 MODEL_TYPE="r18"
-BATCH_SIZE=16
+BATCH_SIZE=32
+EPOCHS=150
+LR_STEP=100
 
 NUM_WORKERS=16
 
-python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs 100 --num_workers $NUM_WORKERS --wandb
+# python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --num_workers $NUM_WORKERS --wandb
+python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --perlin --num_workers $NUM_WORKERS --wandb
