@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import random
 import time
 
 import numpy as np
@@ -160,6 +161,8 @@ if __name__ == "__main__":
 
     # Set manual seed!
     torch.manual_seed(seed=seed)
+    random.seed(seed)
+    np.random.seed(seed)
 
     # Get models
     models = {k: get_model(model_type, device=device, seed=seed) for k in names}
@@ -367,7 +370,7 @@ if __name__ == "__main__":
             print(f"Val performance: {performance_val}")
 
             lr_schedulers[k].step(performance_val["mean_loss_total"])
-            stop[k] = earlystoppers[k](performance_val["mean_loss_total"])
+            stop[k] = earlystoppers[k](performance_val["mean_loss_total"]) or (optimizers[k].param_groups[-1]["lr"] < 1e-6)
 
             log_stats = (
                 log_stats
