@@ -79,7 +79,7 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num_workers", default=0, type=int)
 
     # Saving
-    parser.add_argument("--save_every", default=100, type=int)
+    parser.add_argument("--save_every", default=25, type=int)
 
     # weights and biases
     parser.add_argument("--wandb", action="store_true")
@@ -301,7 +301,7 @@ if __name__ == "__main__":
 
         best = min(best, performance["val_loss"])
 
-        save = (epoch + 1) == n_epochs or len(suffix)
+        save = ((epoch + 1) == n_epochs) or bool(len(suffix)) or ((epoch + 1) % save_every == 0)
 
         if save:
             torch.save(
