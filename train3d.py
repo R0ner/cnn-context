@@ -120,6 +120,9 @@ if __name__ == "__main__":
 
     save_every = args.save_every
 
+    # Scheduler
+    lr_step = args.lr_step
+
     # Perlin noise
     perlin = args.perlin
 
@@ -180,7 +183,7 @@ if __name__ == "__main__":
 
     optimizer = Adam(model.parameters(), lr=lr)
 
-    scheduler = StepLR(optimizer, step_size=100, gamma=0.1)
+    scheduler = StepLR(optimizer, step_size=lr_step, gamma=0.1)
 
     # Metrics
     m_acc = torchmetrics.Accuracy("multiclass", num_classes=len(name_legend))
