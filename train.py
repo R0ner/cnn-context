@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import wandb
 from dataset import get_dloader, normalize_hw, normalize_hw_mask
-from loss import SuperpixelCriterion
+from loss import SuperpixelCriterion, grCriterion
 from scheduler import (EarlyStopper, EarlyStopperSmooth,
                        ReduceLROnPlateauSmooth, ReduceLROnPlateauWU)
 from util import DummyModel, eval_step, get_performance, train_step
@@ -68,7 +68,17 @@ def get_args_parser() -> argparse.ArgumentParser:
         "--sp_mode",
         default="l2",
         type=str,
-        help="One of ['l1', 'l2'] (see L1 and L2 norm).",
+        help="One of ['l1', 'l2', 'elastic'] (see L1 and L2 norm).",
+    )
+
+    # GR loss
+    parser.add_argument("--gr_loss", action="store_true")
+    parser.add_argument("--gr_weight", default=1.0, type=float)
+    parser.add_argument(
+        "--gr_mode",
+        default="l2",
+        type=str,
+        help="One of ['l1', 'l2', 'elastic'] (see L1 and L2 norm).",
     )
 
     # Model parameters
@@ -142,6 +152,11 @@ if __name__ == "__main__":
     # Use sp loss
     sp_loss = args.sp_loss
 
+    # Use gr loss
+    gr_loss = args.gr_loss
+
+    assert not sp_loss and gr_loss, "Cannot use feature loss and gr loss at the same time."
+
     names = ("a", "b", "c")
 
     save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -168,8 +183,10 @@ if __name__ == "__main__":
     models = {k: get_model(model_type, device=device, seed=seed) for k in names}
 
     # Loss function
-    if not sp_loss:
+    if sp_loss:
         criterion = torch.nn.CrossEntropyLoss()
+    elif gr_loss:
+        criterion = grCriterion(weight=args.gr_weight, mode=args.gr_mode)
     else:
         criterion = SuperpixelCriterion(
             model_type,
@@ -267,6 +284,7 @@ if __name__ == "__main__":
     metrics_train_dict = lambda: {
         "loss_total": [],
         "loss_ce": [],
+        "loss_gr": [],
         "loss_features": [],
         "preds": [],
         "scores": [],
@@ -297,6 +315,7 @@ if __name__ == "__main__":
                 device=device,
                 metrics=metrics_train["a"],
                 return_features=sp_loss,
+                gr=gr_loss,
             )
             train_step(
                 models["b"],
@@ -308,6 +327,7 @@ if __name__ == "__main__":
                 device=device,
                 metrics=metrics_train["b"],
                 return_features=sp_loss,
+                gr=gr_loss,
             )
             train_step(
                 models["c"],
@@ -319,6 +339,7 @@ if __name__ == "__main__":
                 device=device,
                 metrics=metrics_train["c"],
                 return_features=sp_loss,
+                gr=gr_loss,
             )
 
         # Val
@@ -334,6 +355,7 @@ if __name__ == "__main__":
                 device=device,
                 metrics=metrics_val["a"],
                 return_features=sp_loss,
+                gr=gr_loss,
             )
             eval_step(
                 models["b"],
@@ -344,6 +366,7 @@ if __name__ == "__main__":
                 device=device,
                 metrics=metrics_val["b"],
                 return_features=sp_loss,
+                gr=gr_loss,
             )
             eval_step(
                 models["c"],
@@ -354,6 +377,7 @@ if __name__ == "__main__":
                 device=device,
                 metrics=metrics_val["c"],
                 return_features=sp_loss,
+                gr=gr_loss,
             )
 
         # Calculate performance metrics

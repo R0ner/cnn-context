@@ -186,7 +186,7 @@ class SuperpixelCriterion:
     def __call__(
         self, outs: list[torch.tensor], targets: torch.tensor, masks: torch.tensor
     ) -> torch.tensor:
-        
+
         # Get feature weights for each layer according to "mode"
         sp_weights = self.get_sp_weights(masks)
         n_layers = len(sp_weights)
@@ -217,3 +217,46 @@ class SuperpixelCriterion:
         loss = loss_ce + loss / layer_weight_sum * self.sp_loss_weight
 
         return loss, loss_ce
+
+
+class grCriterion(nn.Module):
+    def __init__(
+        self, weight=1.0, mode: str = "l2"
+    ) -> None:
+        super().__init__()
+        self.gr_loss_weight = weight
+        self.mode = mode
+
+        self.ce_criterion = nn.CrossEntropyLoss()  # Cross entropy
+
+        if self.mode == "l1":
+            self.lf = torch.abs
+        elif self.mode == "l2":
+            self.lf = torch.square
+        elif self.mode == "elastic":
+            self.lf = lambda x: (torch.square(x) + torch.abs(x)) / 2
+    
+    def forward(self, x, label, mask, model):
+        bs = x.size(0)
+        
+        x.requires_grad = True
+        
+        out = model(x)
+
+        loss_ce = self.ce_criterion(out, label)
+        
+        # Compute input gradient
+        saliency = torch.autograd.grad(outputs=loss_ce, inputs=x,
+                                        grad_outputs=torch.ones_like(loss_ce),
+                                        create_graph=True)[0]
+        
+        x.requires_grad = False
+        
+        mask_b = ~mask
+
+        # Compute gradient penalty
+        loss = (self.lf(mask_b * saliency).view(bs, -1).sum(1) / (mask_b.view(bs, -1).sum(1) * x.size(1) + 1e-7)).mean()
+    
+        loss = loss_ce + self.gr_loss_weight * loss
+        
+        return loss, loss_ce, out

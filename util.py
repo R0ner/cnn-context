@@ -27,13 +27,16 @@ def train_step(
     device="cpu",
     metrics=None,
     return_features=False,
+    gr=False,
 ):
     if isinstance(model, DummyModel):
         return
 
     optimizer.zero_grad()
 
-    if return_features:
+    if gr:
+        loss, loss_ce, out = criterion(imgs.to(device), labels.type(torch.LongTensor).to(device), masks.to(device), model)
+    elif return_features:
         out = resnet_forward_features(model, imgs.to(device))
         loss, loss_ce = criterion(
             out, labels.type(torch.LongTensor).to(device), masks.to(device)
@@ -48,7 +51,12 @@ def train_step(
     optimizer.step()
 
     loss_features = 0
-    if return_features:
+    loss_gr = 0
+    if gr:
+        loss_total = loss.cpu().detach().item()
+        loss_ce = loss_ce.cpu().detach().item()
+        loss_gr = loss_total - loss_ce
+    elif return_features:
         loss_total = loss.cpu().detach().item()
         loss_ce = loss_ce.cpu().detach().item()
         loss_features = loss_total - loss_ce
@@ -58,12 +66,13 @@ def train_step(
 
     if metrics is not None:
         with torch.no_grad():
-            score, indices = torch.max(out.cpu(), 1)
+            score, indices = torch.max(out.cpu().detach(), 1)
             metrics["loss_total"].append(loss_total)
             metrics["loss_ce"].append(loss_ce)
+            metrics["loss_gr"].append(loss_gr)
             metrics["loss_features"].append(loss_features)
-            metrics["preds"].append(indices.detach().numpy())
-            metrics["scores"].append(score.detach().numpy())
+            metrics["preds"].append(indices.numpy())
+            metrics["scores"].append(score.numpy())
             metrics["labels"].append(labels.numpy())
 
 
@@ -76,6 +85,7 @@ def eval_step(
     device="cpu",
     metrics=None,
     return_features=False,
+    gr=False,
 ):
     if metrics is None or isinstance(model, DummyModel):
         return
@@ -84,22 +94,30 @@ def eval_step(
     obj_score = get_obj_score(slc, masks)
 
     loss_features = 0
-    with torch.no_grad():
-        if not return_features:
-            loss_ce = criterion(out, labels.type(torch.LongTensor))
-            loss_ce = loss_ce.cpu().detach().item()
-            loss_total = loss_ce
-        else:
-            out = resnet_forward_features(model, imgs.to(device))
-            loss_total, loss_ce = criterion(
-                out, labels.type(torch.LongTensor).to(device), masks.to(device)
-            )
-            loss_total = loss_total.cpu().detach().item()
-            loss_ce = loss_ce.cpu().detach().item()
-            loss_features = loss_total - loss_ce
+    if gr:
+        loss, loss_ce, _ = criterion(imgs.to(device), labels.type(torch.LongTensor).to(device), masks.to(device), model)
+        loss_total = loss.cpu().detach().item()
+        loss_ce = loss_ce.cpu().detach().item()
+        loss_gr = loss_total - loss_ce
+    else:
+        with torch.no_grad():
+            
+            if not return_features:
+                loss_ce = criterion(out, labels.type(torch.LongTensor))
+                loss_ce = loss_ce.cpu().detach().item()
+                loss_total = loss_ce
+            else:
+                out = resnet_forward_features(model, imgs.to(device))
+                loss_total, loss_ce = criterion(
+                    out, labels.type(torch.LongTensor).to(device), masks.to(device)
+                )
+                loss_total = loss_total.cpu().detach().item()
+                loss_ce = loss_ce.cpu().detach().item()
+                loss_features = loss_total - loss_ce
 
     metrics["loss_total"].append(loss_total)
     metrics["loss_ce"].append(loss_ce)
+    metrics["loss_gr"].append(loss_gr)
     metrics["loss_features"].append(loss_features)
     metrics["preds"].append(indices.detach().numpy())
     metrics["scores"].append(score.detach().numpy())
