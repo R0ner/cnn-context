@@ -2,6 +2,7 @@ from typing import Any
 
 import torch
 from torch import nn
+from torch.autograd import grad
 from torch.nn.functional import interpolate
 
 
@@ -243,15 +244,22 @@ class grCriterion(nn.Module):
         
         out = model(x)
 
-        loss_ce = self.ce_criterion(out, label)
+        # loss_ce = self.ce_criterion(out, label)
         
+        # # Compute input gradient
+        # saliency = torch.autograd.grad(outputs=loss_ce, inputs=x, create_graph=True)[0]
+        
+        # x.requires_grad = False
+
+        logits, _ = out.max(1)
+
         # Compute input gradient
-        saliency = torch.autograd.grad(outputs=loss_ce, inputs=x,
-                                        grad_outputs=torch.ones_like(loss_ce),
-                                        create_graph=True)[0]
+        saliency = grad(outputs=logits, inputs=x, grad_outputs=torch.ones_like(logits), create_graph=True)[0]
         
         x.requires_grad = False
         
+        loss_ce = self.ce_criterion(out, label)
+
         mask_b = ~mask
 
         # Compute gradient penalty

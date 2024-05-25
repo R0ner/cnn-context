@@ -140,17 +140,15 @@ def get_obj_score(slc, masks):
 
 
 def get_saliency(model, imgs, device="cpu"):
-    # Calculate gradient of higest score w.r.t. input
     imgs = Variable(imgs.data, requires_grad=True)
 
     # Get predictions (forward pass)
     out = model(imgs.to(device))
     score, indices = torch.max(out, 1)
 
-    # Backward pass to get gradients of score predicted class w.r.t. input image
+    # Backward pass to get gradients of score of the predicted class wrt. the input image
     score.backward()
 
-    # get max along channel axis
     slc = imgs.grad[0].cpu()
 
     # normalize to [-1..1]
