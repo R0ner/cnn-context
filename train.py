@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import wandb
 from dataset import get_dloader, normalize_hw, normalize_hw_mask
-from loss import SuperpixelCriterion, grCriterion
+from loss import ContrastCriterion, SuperpixelCriterion, grCriterion
 from scheduler import (EarlyStopper, EarlyStopperSmooth,
                        ReduceLROnPlateauSmooth, ReduceLROnPlateauWU)
 from util import DummyModel, eval_step, get_performance, train_step
@@ -80,6 +80,10 @@ def get_args_parser() -> argparse.ArgumentParser:
         type=str,
         help="One of ['l1', 'l2', 'elastic'] (see L1 and L2 norm).",
     )
+    
+    # Contrast loss
+    parser.add_argument("--cnt_loss", action="store_true")
+    parser.add_argument("--cnt_weight", default=1.0, type=float)
 
     # Model parameters
     parser.add_argument(
@@ -149,13 +153,11 @@ if __name__ == "__main__":
     # Use wandb
     use_wandb = args.wandb
 
-    # Use sp loss
-    sp_loss = args.sp_loss
+    sp_loss = args.sp_loss  # Use sp loss
+    gr_loss = args.gr_loss  # Use gr loss
+    contrast_loss = args.cnt_loss  # Use contrast loss
 
-    # Use gr loss
-    gr_loss = args.gr_loss
-
-    assert not sp_loss and gr_loss, "Cannot use feature loss and gr loss at the same time."
+    assert sp_loss + gr_loss + contrast_loss < 2, "Cannot use more than 1 loss function at a time."
 
     names = ("a", "b", "c")
 
@@ -187,6 +189,8 @@ if __name__ == "__main__":
         criterion = torch.nn.CrossEntropyLoss()
     elif gr_loss:
         criterion = grCriterion(weight=args.gr_weight, mode=args.gr_mode)
+    elif contrast_loss:
+        criterion = ContrastCriterion(weight=args.cnt_weight)
     else:
         criterion = SuperpixelCriterion(
             model_type,
@@ -285,6 +289,7 @@ if __name__ == "__main__":
         "loss_total": [],
         "loss_ce": [],
         "loss_gr": [],
+        "loss_contrast": [],
         "loss_features": [],
         "preds": [],
         "scores": [],
@@ -316,6 +321,7 @@ if __name__ == "__main__":
                 metrics=metrics_train["a"],
                 return_features=sp_loss,
                 gr=gr_loss,
+                contrast=contrast_loss,
             )
             train_step(
                 models["b"],
@@ -328,6 +334,7 @@ if __name__ == "__main__":
                 metrics=metrics_train["b"],
                 return_features=sp_loss,
                 gr=gr_loss,
+                contrast=contrast_loss,
             )
             train_step(
                 models["c"],
@@ -340,6 +347,7 @@ if __name__ == "__main__":
                 metrics=metrics_train["c"],
                 return_features=sp_loss,
                 gr=gr_loss,
+                contrast=contrast_loss,
             )
 
         # Val
@@ -356,6 +364,7 @@ if __name__ == "__main__":
                 metrics=metrics_val["a"],
                 return_features=sp_loss,
                 gr=gr_loss,
+                contrast=contrast_loss,
             )
             eval_step(
                 models["b"],
@@ -367,6 +376,7 @@ if __name__ == "__main__":
                 metrics=metrics_val["b"],
                 return_features=sp_loss,
                 gr=gr_loss,
+                contrast=contrast_loss,
             )
             eval_step(
                 models["c"],
@@ -378,6 +388,7 @@ if __name__ == "__main__":
                 metrics=metrics_val["c"],
                 return_features=sp_loss,
                 gr=gr_loss,
+                contrast=contrast_loss,
             )
 
         # Calculate performance metrics
@@ -390,8 +401,16 @@ if __name__ == "__main__":
             performance_train = get_performance(metrics_train[k])
             performance_val = get_performance(metrics_val[k])
 
-            print(f"Train performance: {performance_train}")
-            print(f"Val performance: {performance_val}")
+            for split, performance in (('Train', performance_train), ('Val', performance_val)):
+                pstr = f"{split} performance: "
+                for metric, value in performance.items():
+                    if np.abs(value) < 1e-14:
+                        pstr += f"{metric}: {value:.0f}, "
+                    elif np.log10(value) > -4:
+                        pstr += f"{metric}: {value:.4f}, "
+                    else:
+                        pstr += f"{metric}: {value:.4e}, "
+                print(pstr[:-2])
 
             lr_schedulers[k].step(performance_val["mean_loss_total"])
             stop[k] = earlystoppers[k](performance_val["mean_loss_total"]) or (optimizers[k].param_groups[-1]["lr"] < 1e-6)

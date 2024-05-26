@@ -28,6 +28,7 @@ def train_step(
     metrics=None,
     return_features=False,
     gr=False,
+    contrast=False,
 ):
     if isinstance(model, DummyModel):
         return
@@ -35,6 +36,8 @@ def train_step(
     optimizer.zero_grad()
 
     if gr:
+        loss, loss_ce, out = criterion(imgs.to(device), labels.type(torch.LongTensor).to(device), masks.to(device), model)
+    elif contrast:
         loss, loss_ce, out = criterion(imgs.to(device), labels.type(torch.LongTensor).to(device), masks.to(device), model)
     elif return_features:
         out = resnet_forward_features(model, imgs.to(device))
@@ -50,12 +53,17 @@ def train_step(
 
     optimizer.step()
 
-    loss_features = 0
     loss_gr = 0
+    loss_contrast = 0
+    loss_features = 0
     if gr:
         loss_total = loss.cpu().detach().item()
         loss_ce = loss_ce.cpu().detach().item()
         loss_gr = loss_total - loss_ce
+    elif contrast:
+        loss_total = loss.cpu().detach().item()
+        loss_ce = loss_ce.cpu().detach().item()
+        loss_contrast = loss_total - loss_ce
     elif return_features:
         loss_total = loss.cpu().detach().item()
         loss_ce = loss_ce.cpu().detach().item()
@@ -70,6 +78,7 @@ def train_step(
             metrics["loss_total"].append(loss_total)
             metrics["loss_ce"].append(loss_ce)
             metrics["loss_gr"].append(loss_gr)
+            metrics["loss_contrast"].append(loss_contrast)
             metrics["loss_features"].append(loss_features)
             metrics["preds"].append(indices.numpy())
             metrics["scores"].append(score.numpy())
@@ -86,6 +95,7 @@ def eval_step(
     metrics=None,
     return_features=False,
     gr=False,
+    contrast=False,
 ):
     if metrics is None or isinstance(model, DummyModel):
         return
@@ -93,6 +103,8 @@ def eval_step(
     slc, score, indices, out = get_saliency(model, imgs, device=device)
     obj_score = get_obj_score(slc, masks)
 
+    loss_gr = 0
+    loss_contrast = 0
     loss_features = 0
     if gr:
         loss, loss_ce, _ = criterion(imgs.to(device), labels.type(torch.LongTensor).to(device), masks.to(device), model)
@@ -101,12 +113,7 @@ def eval_step(
         loss_gr = loss_total - loss_ce
     else:
         with torch.no_grad():
-            
-            if not return_features:
-                loss_ce = criterion(out, labels.type(torch.LongTensor))
-                loss_ce = loss_ce.cpu().detach().item()
-                loss_total = loss_ce
-            else:
+            if return_features:
                 out = resnet_forward_features(model, imgs.to(device))
                 loss_total, loss_ce = criterion(
                     out, labels.type(torch.LongTensor).to(device), masks.to(device)
@@ -114,10 +121,20 @@ def eval_step(
                 loss_total = loss_total.cpu().detach().item()
                 loss_ce = loss_ce.cpu().detach().item()
                 loss_features = loss_total - loss_ce
-
+            elif contrast:
+                loss, loss_ce, _ = criterion(imgs.to(device), labels.type(torch.LongTensor).to(device), masks.to(device), model)
+                loss_total = loss.cpu().detach().item()
+                loss_ce = loss_ce.cpu().detach().item()
+                loss_contrast = loss_total - loss_ce
+            else:
+                loss_ce = criterion(out, labels.type(torch.LongTensor))
+                loss_ce = loss_ce.cpu().detach().item()
+                loss_total = loss_ce
+                
     metrics["loss_total"].append(loss_total)
     metrics["loss_ce"].append(loss_ce)
     metrics["loss_gr"].append(loss_gr)
+    metrics["loss_contrast"].append(loss_contrast)
     metrics["loss_features"].append(loss_features)
     metrics["preds"].append(indices.detach().numpy())
     metrics["scores"].append(score.detach().numpy())

@@ -268,3 +268,23 @@ class grCriterion(nn.Module):
         loss = loss_ce + self.gr_loss_weight * loss
         
         return loss, loss_ce, out
+
+
+class ContrastCriterion(nn.Module):
+    def __init__(self, weight) -> None:
+        super().__init__()
+        self.weight = weight
+
+        self.ce_criterion = nn.CrossEntropyLoss(reduction='none')
+    
+    def forward(self, x, label, mask, model):
+        out = model(x)
+        out_clean = model(x * mask)
+
+        lx = self.ce_criterion(out, label)
+        lx_clean = self.ce_criterion(out_clean, label)
+        
+        loss_ce = lx.mean()
+        loss = loss_ce + self.weight * torch.square(lx - lx_clean).mean()
+        
+        return loss, loss_ce, out
