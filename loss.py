@@ -276,15 +276,38 @@ class ContrastCriterion(nn.Module):
         self.weight = weight
 
         self.ce_criterion = nn.CrossEntropyLoss(reduction='none')
+        # self.cos_criterion = nn.CosineEmbeddingLoss()
+
+        self.lf = nn.MSELoss()
+        # self.lf = nn.L1Loss()
     
     def forward(self, x, label, mask, model):
-        out = model(x)
-        out_clean = model(x * mask)
+        
+        
+        training = model.training
+
+        features = model.feature_extractor(x)
+        out = model.fc(torch.flatten(model.avgpool(features), 1))
+
+        if training:
+            for bn in model.bn_all:
+                bn.momentum = 0
+        features_m = model.feature_extractor(x * mask + ~mask * torch.randn(mask.size(0), mask.size(1), 1, 1, device="cuda"))
+        # out_clean =  model.fc(torch.flatten(model.avgpool(features_clean), 1))
+        if training:
+            for bn in model.bn_all:
+                bn.momentum = 0.1
 
         lx = self.ce_criterion(out, label)
-        lx_clean = self.ce_criterion(out_clean, label)
+        # lx_clean = self.ce_criterion(out_clean, label)
         
         loss_ce = lx.mean()
-        loss = loss_ce + self.weight * torch.square(lx - lx_clean).mean()
+        
+        loss = loss_ce + +  self.weight * self.lf(features, features_m)
+     
+        # loss = lx_clean.mean() + self.weight * torch.square(lx - lx_clean).mean()
+        
+        # with torch.no_grad():
+        #     loss_ce = lx.mean()
         
         return loss, loss_ce, out

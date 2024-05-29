@@ -35,6 +35,11 @@ def get_model(model_type, device="cpu", seed=191510):
     model.fc = torch.nn.Linear(
         in_features=model.fc.in_features, out_features=len(class_legend), bias=True
     )
+    model.feature_extractor = torch.nn.Sequential(*list(model.children())[:-2])
+    model.bn_all = []
+    for module in model.modules():
+        if isinstance(module, torch.nn.BatchNorm2d):
+            model.bn_all.append(module)
     model.to(device)
     return model
 
@@ -236,6 +241,11 @@ if __name__ == "__main__":
         k: get_lr_scheduler(optimizer) for k, optimizer in optimizers.items()
     }
 
+    if contrast_loss:
+        scheduler_metric = 'mean_loss_ce'
+    else:
+        scheduler_metric = 'mean_loss_total'
+
     # Early stopping
     if smooth:
         get_early_stopper = lambda: EarlyStopperSmooth(
@@ -412,8 +422,8 @@ if __name__ == "__main__":
                         pstr += f"{metric}: {value:.4e}, "
                 print(pstr[:-2])
 
-            lr_schedulers[k].step(performance_val["mean_loss_total"])
-            stop[k] = earlystoppers[k](performance_val["mean_loss_total"]) or (optimizers[k].param_groups[-1]["lr"] < 1e-6)
+            lr_schedulers[k].step(performance_val[scheduler_metric])
+            stop[k] = earlystoppers[k](performance_val[scheduler_metric]) or (optimizers[k].param_groups[-1]["lr"] < 1e-6)
 
             log_stats = (
                 log_stats
