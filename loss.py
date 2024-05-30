@@ -271,19 +271,20 @@ class grCriterion(nn.Module):
 
 
 class ContrastCriterion(nn.Module):
-    def __init__(self, weight) -> None:
+    def __init__(self, weight, cos_weight=0.5, device="cpu") -> None:
         super().__init__()
         self.weight = weight
+        self.cos_weight=cos_weight
+        self.device = device
 
         self.ce_criterion = nn.CrossEntropyLoss(reduction='none')
-        # self.cos_criterion = nn.CosineEmbeddingLoss()
+        self.cos_sim = nn.CosineSimilarity(dim=1)
 
         self.lf = nn.MSELoss()
         # self.lf = nn.L1Loss()
+        self.alphas = torch.tensor([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], device=self.device)
     
     def forward(self, x, label, mask, model):
-        
-        
         training = model.training
 
         features = model.feature_extractor(x)
@@ -292,22 +293,17 @@ class ContrastCriterion(nn.Module):
         if training:
             for bn in model.bn_all:
                 bn.momentum = 0
-        features_m = model.feature_extractor(x * mask + ~mask * torch.randn(mask.size(0), mask.size(1), 1, 1, device="cuda"))
-        # out_clean =  model.fc(torch.flatten(model.avgpool(features_clean), 1))
+        alpha = self.alphas[torch.randint(self.alphas.size(0), (x.size(0), ))].view(-1, 1, 1, 1)
+
+        features_m = model.feature_extractor(x * mask + ~mask * (alpha *  torch.randn(mask.size(0), mask.size(1), 1, 1, device=self.device) + (1 - alpha) * x))
         if training:
             for bn in model.bn_all:
                 bn.momentum = 0.1
 
         lx = self.ce_criterion(out, label)
-        # lx_clean = self.ce_criterion(out_clean, label)
         
         loss_ce = lx.mean()
         
-        loss = loss_ce + +  self.weight * self.lf(features, features_m)
-     
-        # loss = lx_clean.mean() + self.weight * torch.square(lx - lx_clean).mean()
-        
-        # with torch.no_grad():
-        #     loss_ce = lx.mean()
+        loss = loss_ce + self.weight * (self.cos_weight * (1-self.cos_sim(features.flatten(2), features_m.flatten(2)).mean()) + (1 - self.cos_weight) * self.lf(features, features_m)) / 2
         
         return loss, loss_ce, out
