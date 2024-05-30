@@ -304,6 +304,6 @@ class ContrastCriterion(nn.Module):
         
         loss_ce = lx.mean()
         
-        loss = loss_ce + self.weight * (self.cos_weight * (1-self.cos_sim(features.flatten(2), features_m.flatten(2)).mean()) + (1 - self.cos_weight) * self.lf(features, features_m)) / 2
+        loss = loss_ce + self.weight * (self.cos_weight * (1-self.cos_sim(features.flatten(2), features_m.flatten(2)).mean()) + (1 - self.cos_weight) * self.lf(features, features_m))
         
         return loss, loss_ce, out
