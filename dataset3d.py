@@ -161,6 +161,14 @@ class BNSetNoise(BNSetMasks):
 
         return volume, label, mask, noise
 
+class BNSetMix(BNSet):
+    def __init__(self, mix_dir):
+        self.mix_dir = mix_dir
+        self.transform = transforms.Compose([transform_shared, transform_vol])
+
+        self.volumes = list(map(lambda s: f"{mix_dir}/{s}", filter(lambda s: s.endswith('.tif'), os.listdir(mix_dir))))
+        self.labels = np.empty(len(self.volumes))
+        
 
 def get_dloader_mask(
     split, batch_size, data_dir="data/BugNIST_DATA", subset=None, **kwargs
