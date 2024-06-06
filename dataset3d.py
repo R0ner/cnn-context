@@ -194,16 +194,20 @@ def get_dloader_mask(
 
 
 def get_dloader_noise(
-    split, batch_size, data_dir="data/BugNIST_DATA", subset=None, **kwargs
+    split, batch_size, data_dir="data/BugNIST_DATA", subset=None, seg=False, **kwargs
 ):
     split = split.lower()
     shuffle = False
     if split == "train":
+        if seg:
+            t_s_aug = transform_shared_augment_seg
+        else:
+            t_s_aug = transform_shared_augment
         dset = BNSetNoise(
             data_dir,
             split,
             subset=subset,
-            transform_shared=transform_shared_augment,
+            transform_shared=t_s_aug,
             transform_vol=transform_vol_augment,
             transform_noise=transform_noise_augment,
         )
@@ -241,6 +245,18 @@ transform_shared_augment = transforms.Compose(
         T.RandomTranspose(),
         transforms.RandomApply([T.RollJitter((6, 6, 6), (-3, -2, -1))], p=0.5),
         transforms.RandomApply([T.RandomRotation((360, 360, 360))], p=0.3),
+    ]
+)
+
+transform_shared_augment_seg = transforms.Compose(
+    [
+        T.ToTensor(),
+        T.RandomAxisFlip(0),
+        T.RandomAxisFlip(1),
+        T.RandomAxisFlip(2),
+        T.RandomTranspose(),
+        transforms.RandomApply([T.RandomRotation((360, 360, 360))], p=0.3),
+        transforms.RandomApply([T.RollJitter((128, 128, 128), (-3, -2, -1))], p=0.5),
     ]
 )
 

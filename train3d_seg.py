@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import torch
 import torchmetrics
-from monai.networks.nets import resnet10, resnet18
+from monai import losses
+from monai.networks import nets
 from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
@@ -44,21 +45,21 @@ model_types = {
 
 def get_model(model_type, device="cpu", seed=191510):
     torch.manual_seed(seed)
-    if model_type == "r18":
-        model = resnet18(
-            spatial_dims=3,
-            n_input_channels=1,
-            no_max_pool=False,
-            conv1_t_stride=2,
-            num_classes=len(name_legend),
-        )
+    model = nets.UNet(
+        spatial_dims=3,
+        in_channels=1,
+        out_channels=len(name_legend) + 1,  # Bug classes and background
+        channels=(32, 64, 128, 256),
+        strides=(2, 2, 2),
+        num_res_units=2,
+    )
 
     model.to(device)
     return model
 
 
 def get_args_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser("BN experiment hyperparameters", add_help=False)
+    parser = argparse.ArgumentParser("BN segmentation experiment hyperparameters", add_help=False)
     parser.add_argument("--lr", default=1e-4, type=float)
     parser.add_argument("--wd", default=0.0, type=float)
     parser.add_argument("--batch_size", default=32, type=int)
@@ -130,12 +131,12 @@ if __name__ == "__main__":
     use_wandb = args.wandb
 
     save_dir = (
-        f"/work3/s191510/models/bn-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
+        f"/work3/s191510/models/bn-seg-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
     )
 
     while os.path.exists(save_dir):
         save_dir = (
-            f"/work3/s191510/models/bn-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
+            f"/work3/s191510/models/bn-seg-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
         )
     save_dir_model = f"{save_dir}/cpts"
 
@@ -150,7 +151,7 @@ if __name__ == "__main__":
     if use_wandb:
         wandb.init(
             # set the wandb project where this run will be logged
-            project="BugNIST-classification",
+            project="BugNIST-segmentation",
             # track hyperparameters and run metadata
             config={"architecture": model_types[model_type], "batch_size": batch_size},
         )
@@ -160,18 +161,20 @@ if __name__ == "__main__":
     persistent_workers = num_workers > 0
     trainloader = get_dloader_noise(
         "train",
-        batch_size,
+        batch_size=batch_size,
         data_dir=data_dir,
         subset=subset,
+        seg=True,
         num_workers=num_workers,
         pin_memory=True,
         persistent_workers=persistent_workers,
     )
     valloader = get_dloader_noise(
         "val",
-        batch_size=1,
+        batch_size=batch_size,
         data_dir=data_dir,
         subset=subset,
+        seg=True,
         num_workers=num_workers,
         pin_memory=True,
         persistent_workers=persistent_workers,
@@ -179,19 +182,17 @@ if __name__ == "__main__":
 
     model = get_model(model_type=model_type, device=device, seed=seed)
 
-    criterion = nn.CrossEntropyLoss()
+    ce_weight = torch.ones(len(name_legend) + 1, device=device)
+    ce_weight[0] = 0.1
+    criterion = losses.DiceCELoss(
+        ce_weight=ce_weight, to_onehot_y=True, softmax=True, include_background=True
+    )
 
     optimizer = Adam(model.parameters(), lr=lr)
 
     scheduler = StepLR(optimizer, step_size=lr_step, gamma=0.1)
 
     # Metrics
-    m_acc = torchmetrics.Accuracy("multiclass", num_classes=len(name_legend))
-    m_auc = torchmetrics.AUROC("multiclass", num_classes=len(name_legend))
-    m_prec = torchmetrics.Precision("multiclass", num_classes=len(name_legend))
-    m_rec = torchmetrics.Recall("multiclass", num_classes=len(name_legend))
-    m_f1 = torchmetrics.F1Score("multiclass", num_classes=len(name_legend))
-
     if perlin:
         get_input = lambda volumes, masks, noise: volumes * masks + ~masks * noise
     else:
@@ -203,94 +204,64 @@ if __name__ == "__main__":
     for epoch in range(n_epochs):
         metrics_train = {
             "loss": [],
-            "preds": [],
-            "scores": [],
-            "labels": [],
+            "accuracy": [],
         }
         metrics_val = {
             "loss": [],
-            "preds": [],
-            "scores": [],
-            "labels": [],
-            "object_scores": [],
+            "accuracy": [],
         }
 
         print(f"Epoch {epoch}")
         model.train()
+        count = 0
         for volumes, labels, masks, noise in tqdm(trainloader):
+            target = (labels.view(-1, 1, 1, 1, 1) + 1) * masks
             out = model(get_input(volumes, masks, noise).to(device))
-
+            
             optimizer.zero_grad()
-            loss = criterion(out, labels.type(torch.LongTensor).to(device))
+            loss = criterion(out, target.to(device))
 
             loss.backward()
             optimizer.step()
 
-            _, indices = torch.max(out.cpu(), 1)
 
             metrics_train["loss"].append(loss.cpu().detach().item())
-            metrics_train["preds"].append(indices.detach().numpy())
-            metrics_train["scores"].append(out.softmax(dim=1).cpu().detach())
-            metrics_train["labels"].append(labels.numpy())
+            metrics_train["accuracy"].append((out.cpu().detach().max(1)[1].flatten(1) == target.flatten(1)).float().mean().item())
+
+            count += 1
+            if count > 10:
+                break
 
         model.eval()
+        count = 0
         for volumes, labels, masks, noise in tqdm(valloader):
-            slc, score, indices, out = get_saliency3d(
-                model, get_input(volumes, masks, noise), device=device
-            )
-            obj_score = get_obj_score3d(slc, masks)
-
+            target = (labels.view(-1, 1, 1, 1, 1) + 1) * masks
+            
             with torch.no_grad():
-                loss = criterion(
-                    out.to(device), labels.type(torch.LongTensor).to(device)
-                )
-
-            _, indices = torch.max(out.cpu(), 1)
+                out = model(get_input(volumes, masks, noise).to(device))
+                loss = criterion(out, target.to(device))
 
             metrics_val["loss"].append(loss.cpu().detach().item())
-            metrics_val["preds"].append(indices.detach().numpy())
-            metrics_val["scores"].append(out.softmax(dim=1).cpu().detach())
-            metrics_val["labels"].append(labels.numpy())
-            metrics_val["object_scores"].append(obj_score)
+            metrics_val["accuracy"].append((out.cpu().detach().max(1)[1].flatten(1) == target.flatten(1)).float().mean().item())
+
+            count += 1
+            if count > 10:
+                break
 
         scheduler.step()
 
-        scores_train = torch.concatenate(metrics_train["scores"])
-        scores_val = torch.concatenate(metrics_val["scores"])
-
-        labels_train = torch.from_numpy(np.concatenate(metrics_train["labels"])).long()
-        labels_val = torch.from_numpy(np.concatenate(metrics_val["labels"])).long()
-
         performance = {
             "train_loss": np.mean(metrics_train["loss"]),
-            "train_accuracy": m_acc(scores_train, labels_train).item(),
-            "train_auroc": m_auc(scores_train, labels_train).item(),
-            "train_precision": m_prec(scores_train, labels_train).item(),
-            "train_recall": m_rec(scores_train, labels_train).item(),
-            "train_f1score": m_f1(scores_train, labels_train).item(),
+            "train_accuracy": np.mean(metrics_train["accuracy"]),
             "val_loss": np.mean(metrics_val["loss"]),
-            "val_accuracy": m_acc(scores_val, labels_val).item(),
-            "val_auroc": m_auc(scores_val, labels_val).item(),
-            "val_precision": m_prec(scores_val, labels_val).item(),
-            "val_recall": m_rec(scores_val, labels_val).item(),
-            "val_f1score": m_f1(scores_val, labels_val).item(),
-            "obj_score": np.mean(metrics_val["object_scores"]),
+            "val_accuracy": np.mean(metrics_val["accuracy"]),
         }
         print(performance)
         stats[epoch] = performance
 
         # WandB
         if use_wandb:
-            wandb.log(
-                {
-                    "confmat": wandb.plot.confusion_matrix(
-                        y_true=labels_val.tolist(),
-                        preds=np.concatenate(metrics_val["preds"]).tolist(),
-                        class_names=list(map(lambda k: k.upper(), name_legend.keys())),
-                    ),
-                    **performance,
-                }
-            )
+            wandb.log(performance)
 
         suffix = ""
         if performance["val_loss"] < best:
@@ -304,7 +275,11 @@ if __name__ == "__main__":
 
         best = min(best, performance["val_loss"])
 
-        save = ((epoch + 1) == n_epochs) or bool(len(suffix)) or ((epoch + 1) % save_every == 0)
+        save = (
+            ((epoch + 1) == n_epochs)
+            or bool(len(suffix))
+            or ((epoch + 1) % save_every == 0)
+        )
 
         if save:
             torch.save(
@@ -315,6 +290,6 @@ if __name__ == "__main__":
         if (epoch + 1) % 10 == 0:
             stats_df = pd.DataFrame.from_dict(stats, orient="index")
             stats_df.to_csv(f"{save_dir}/stats.csv")
-
+        
     stats_df = pd.DataFrame.from_dict(stats, orient="index")
     stats_df.to_csv(f"{save_dir}/stats.csv")

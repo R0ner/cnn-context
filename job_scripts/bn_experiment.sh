@@ -27,4 +27,6 @@ LR_STEP=150
 NUM_WORKERS=16
 
 # python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --num_workers $NUM_WORKERS --wandb
-python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --perlin --num_workers $NUM_WORKERS --wandb
+# python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --perlin --num_workers $NUM_WORKERS --wandb
+
+python train3d_seg.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --perlin --num_workers $NUM_WORKERS --wandb
