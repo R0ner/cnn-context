@@ -25,7 +25,7 @@ def show_volume(volume, label=None, size=1, fig_axs=None, title=None, **kwargs):
     volume = np.squeeze(volume)
     if fig_axs is None:
         fig, axs = plt.subplots(
-            1, 3, figsize=(size * 3, size * 3), tight_layout=True
+            1, 3, figsize=(size * 3, size * 1), tight_layout=True
         )
     else:
         fig, axs = fig_axs

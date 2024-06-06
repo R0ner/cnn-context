@@ -14,10 +14,12 @@ from torchvision.tv_tensors import BoundingBoxes
 class HWSet(Dataset):
     """Dataset class for the Husky vs. Wolf dataset."""
 
-    def __init__(self, data_dir, split, transform=None):
+    def __init__(self, data_dir, split, transform=None, spurious=False):
         self.data_dir = data_dir
         self.split = split.lower()
         self.transform = transform
+        self.spurious = spurious
+
         self.val_img_dir = f"{self.data_dir}/val_images_hw"
         self.test_img_dir = f"{self.data_dir}/test_images_hw"
         self.train_img_dirs = [
@@ -55,7 +57,24 @@ class HWSet(Dataset):
                     self.labels.append(label)
         self.labels = np.array(self.labels)
 
+        if self.spurious:
+            self.spurious_template = np.load(f"{data_dir}/w_template.npy")
+            self.spurious_template = np.repeat(self.spurious_template.reshape(1, *self.spurious_template.shape), 3, 0)
+            self.spurious_template_torch = torch.from_numpy(self.spurious_template)
+
+
         assert len(self.imgs) == self.labels.size
+    
+    def add_spurious(self, img, xo=5, yo=5):
+        if torch.is_tensor(img):
+            wt = self.spurious_template_torch
+        elif isinstance(img, np.ndarray):
+            wt = self.spurious_template
+        else:
+            raise ValueError
+        img[:, xo : wt.shape[-2] + xo, yo : wt.shape[-1] + yo][wt == 255] = 255
+        img[:, xo : wt.shape[-2] + xo, yo : wt.shape[-1] + yo][(wt < 255) & (wt > 0)] = 0
+        return img
 
     def __len__(self):
         return self.labels.size
@@ -65,15 +84,18 @@ class HWSet(Dataset):
 
         if self.transform is not None:
             img = self.transform(img)
-
+        
+        if self.spurious:
+            img = self.add_spurious(img)
+        
         return (img, self.labels[item])
 
 
 class HWSetMasks(HWSet):
     """Dataset class for returning images with their segmentation masks."""
 
-    def __init__(self, data_dir, split, transform_shared=None, transform_img=None, require_bbox=False):
-        super().__init__(data_dir, split, None)
+    def __init__(self, data_dir, split, transform_shared=None, transform_img=None, require_bbox=False, spurious=False):
+        super().__init__(data_dir, split, transform=None, spurious=spurious)
         self.transform_shared = transform_shared
         self.transform_img = transform_img
         self.require_bbox=require_bbox
@@ -118,6 +140,9 @@ class HWSetMasks(HWSet):
 
         if self.transform_img is not None:
             img = self.transform_img(img)
+        
+        if self.spurious:
+            img = self.add_spurious(img)
 
         return img, self.labels[item], mask, torch.empty(0)
 
@@ -133,13 +158,15 @@ class HWSetNoise(HWSetMasks):
         transform_img=None,
         transform_noise=None,
         require_bbox=False,
+        spurious=False,
     ):
         super().__init__(
             data_dir,
             split,
             transform_shared=transform_shared,
             transform_img=transform_img,
-            require_bbox=require_bbox
+            require_bbox=require_bbox,
+            spurious=spurious,
         )
         self.transform_noise = transform_noise
 
