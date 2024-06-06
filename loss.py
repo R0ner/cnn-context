@@ -1,9 +1,11 @@
 from typing import Any
 
+import numpy as np
 import torch
 from torch import nn
 from torch.autograd import grad
-from torch.nn.functional import interpolate
+from torch.nn.functional import interpolate, normalize
+from torchvision.transforms.functional import resize
 
 
 class SuperpixelWeights:
@@ -271,18 +273,28 @@ class grCriterion(nn.Module):
 
 
 class ContrastCriterion(nn.Module):
-    def __init__(self, weight, cos_weight=0.5, device="cpu") -> None:
+    def __init__(self, weight, cos_weight=0.5, mode="l2", device="cpu") -> None:
         super().__init__()
         self.weight = weight
         self.cos_weight=cos_weight
+        self.mode = mode
         self.device = device
 
-        self.ce_criterion = nn.CrossEntropyLoss(reduction='none')
+        self.ce_criterion = nn.CrossEntropyLoss()
         self.cos_sim = nn.CosineSimilarity(dim=1)
+        self.blur = Blur()
 
-        self.lf = nn.MSELoss()
-        # self.lf = nn.L1Loss()
+        if self.mode == "l2":
+            self.lf = nn.MSELoss()
+        elif self.mode == "l1":
+            self.lf = nn.L1Loss()
+        else:
+            raise ValueError
+        
         self.alphas = torch.tensor([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], device=self.device)
+    
+    def feature_loss(self, f1, f2):
+        return self.cos_weight * (1-self.cos_sim(f1.flatten(2), f2.flatten(2)).mean()) + (1 - self.cos_weight) * self.lf(f1, f2)
     
     def forward(self, x, label, mask, model):
         training = model.training
@@ -290,20 +302,60 @@ class ContrastCriterion(nn.Module):
         features = model.feature_extractor(x)
         out = model.fc(torch.flatten(model.avgpool(features), 1))
 
-        if training:
-            for bn in model.bn_all:
-                bn.momentum = 0
-        alpha = self.alphas[torch.randint(self.alphas.size(0), (x.size(0), ))].view(-1, 1, 1, 1)
-
-        features_m = model.feature_extractor(x * mask + ~mask * (alpha *  torch.randn(mask.size(0), mask.size(1), 1, 1, device=self.device) + (1 - alpha) * x))
-        if training:
-            for bn in model.bn_all:
-                bn.momentum = 0.1
-
-        lx = self.ce_criterion(out, label)
+        bs = x.size(0)
         
-        loss_ce = lx.mean()
+        for bn in model.bn_all:
+            bn.momentum = 0
         
-        loss = loss_ce + self.weight * (self.cos_weight * (1-self.cos_sim(features.flatten(2), features_m.flatten(2)).mean()) + (1 - self.cos_weight) * self.lf(features, features_m))
+        # if training:
+        #     alpha = (torch.randperm(bs, device=self.device).view(-1, 1, 1, 1) % bs + 1) / bs * 0.9 + 0.1
+        # else:
+        #     alpha = torch.rand(bs, 1, 1, 1, device=self.device) * .9 + .1
+        mask_inv = ~mask
+
+
+        features_m = model.feature_extractor(x * mask + mask_inv * self.blur(mask_inv * x))
+
+        # x = x.repeat(2, 1, 1, 1)
+        # mask = mask.repeat(2, 1, 1, 1)
+        # mask_inv = ~mask
+        # features_m = model.feature_extractor(x * mask + mask_inv * (alpha * self.blur(mask_inv * x) + (1 - alpha) * x))
+        # features = features.repeat(2, 1, 1, 1)
+        
+        for bn in model.bn_all:
+            bn.momentum = 0.1
+
+        
+        loss_ce = self.weight * self.ce_criterion(out, label)
+
+        loss_feature = self.feature_loss(features, features_m)
+
+        loss = loss_ce + (1 - self.weight) * loss_feature
+
         
         return loss, loss_ce, out
+
+class LpNorm(nn.Module):
+    def __init__(self, p=2.0, dim=1, eps=1e-12):
+        super().__init__()
+        self.p = p
+        self.dim = dim
+        self.eps = eps
+    
+    def forward(self, x):
+        return normalize(x, p=self.p, dim=self.dim, eps=self.eps)
+
+class Blur(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+    
+    def get_alphas(self, size, high):
+        return 2 ** np.random.randint(5, high=high, size=size)
+
+    def forward(self, x):
+        h, w = x.size()[-2:]
+        d, m = divmod(x.size(0), 4)
+        return torch.concatenate([
+            resize(resize(x[i * 4:(i + 1) * 4], (max(h // alpha, 1), max(w // alpha, 1)), antialias=False), (h, w))
+            for i, alpha in enumerate(self.get_alphas(d + bool(m), np.ceil(np.log2(max(h, w)))))]
+        )

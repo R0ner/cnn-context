@@ -90,7 +90,12 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cnt_loss", action="store_true")
     parser.add_argument("--cnt_weight", default=1.0, type=float)
     parser.add_argument("--cnt_cos_weight", default=0.5, type=float)
-
+    parser.add_argument(
+        "--cnt_mode",
+        default="l2",
+        type=str,
+        help="One of ['l1', 'l2'] (see L1 and L2 norm).",
+    )
     # Model parameters
     parser.add_argument(
         "--model_type", type=str, default="r18", help="Model type (r18 or r50)"
@@ -196,7 +201,7 @@ if __name__ == "__main__":
     elif gr_loss:
         criterion = grCriterion(weight=args.gr_weight, mode=args.gr_mode)
     elif contrast_loss:
-        criterion = ContrastCriterion(weight=args.cnt_weight, cos_weight=args.cnt_cos_weight, device=device)
+        criterion = ContrastCriterion(weight=args.cnt_weight, cos_weight=args.cnt_cos_weight, mode=args.cnt_mode, device=device)
     else:
         criterion = SuperpixelCriterion(
             model_type,

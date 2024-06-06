@@ -64,6 +64,8 @@ def train_step(
         loss_total = loss.cpu().detach().item()
         loss_ce = loss_ce.cpu().detach().item()
         loss_contrast = loss_total - loss_ce
+        loss_ce /= criterion.weight
+        loss_contrast /= (1 - criterion.weight)
     elif return_features:
         loss_total = loss.cpu().detach().item()
         loss_ce = loss_ce.cpu().detach().item()
@@ -126,6 +128,8 @@ def eval_step(
                 loss_total = loss.cpu().detach().item()
                 loss_ce = loss_ce.cpu().detach().item()
                 loss_contrast = loss_total - loss_ce
+                loss_ce /= criterion.weight
+                loss_contrast /= (1 - criterion.weight)
             else:
                 loss_ce = criterion(out, labels.type(torch.LongTensor))
                 loss_ce = loss_ce.cpu().detach().item()
