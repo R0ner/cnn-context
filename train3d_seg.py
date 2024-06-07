@@ -185,7 +185,7 @@ if __name__ == "__main__":
     ce_weight = torch.ones(len(name_legend) + 1, device=device)
     ce_weight[0] = 0.1
     criterion = losses.DiceCELoss(
-        ce_weight=ce_weight, to_onehot_y=True, softmax=True, include_background=True
+        weight=ce_weight, to_onehot_y=True, softmax=True, include_background=True
     )
 
     optimizer = Adam(model.parameters(), lr=lr)
@@ -213,7 +213,6 @@ if __name__ == "__main__":
 
         print(f"Epoch {epoch}")
         model.train()
-        count = 0
         for volumes, labels, masks, noise in tqdm(trainloader):
             target = (labels.view(-1, 1, 1, 1, 1) + 1) * masks
             out = model(get_input(volumes, masks, noise).to(device))
@@ -228,12 +227,7 @@ if __name__ == "__main__":
             metrics_train["loss"].append(loss.cpu().detach().item())
             metrics_train["accuracy"].append((out.cpu().detach().max(1)[1].flatten(1) == target.flatten(1)).float().mean().item())
 
-            count += 1
-            if count > 10:
-                break
-
         model.eval()
-        count = 0
         for volumes, labels, masks, noise in tqdm(valloader):
             target = (labels.view(-1, 1, 1, 1, 1) + 1) * masks
             
@@ -243,10 +237,6 @@ if __name__ == "__main__":
 
             metrics_val["loss"].append(loss.cpu().detach().item())
             metrics_val["accuracy"].append((out.cpu().detach().max(1)[1].flatten(1) == target.flatten(1)).float().mean().item())
-
-            count += 1
-            if count > 10:
-                break
 
         scheduler.step()
 
