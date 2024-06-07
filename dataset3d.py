@@ -282,6 +282,7 @@ transform_noise_augment = transforms.Compose(
         T.RandomTranspose(),
         transforms.RandomApply([T.IntensityJitter(0.4, 0.4)], p=0.3),
         transforms.RandomApply([T.RandomRotation((360, 360, 360))], p=0.3),
+        transforms.RandomApply([transforms.Lambda(lambda x: x * 0.0)], p=0.1),
         transforms.ToDtype(torch.float32, scale=True)
     ]
 )
