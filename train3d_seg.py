@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 import wandb
 from dataset3d import get_dloader_noise
-from util3d import get_obj_score3d, get_saliency3d
+from util3d import combine_scans
 
 # Random seed
 seed = 191510
@@ -76,6 +76,9 @@ def get_args_parser() -> argparse.ArgumentParser:
     # Perlin
     parser.add_argument("--perlin", action="store_true")
 
+    # Synthetic mixtures
+    parser.add_argument("--synth", action="store_true")
+
     # Multiprocessing
     parser.add_argument("--num_workers", default=0, type=int)
 
@@ -108,7 +111,7 @@ if __name__ == "__main__":
             config = json.load(f)
         parser.set_defaults(**config)
         args = parser.parse_args()
-        epoch = int(os.path.basename(cpt).split('_')[1][1:])
+        epoch = int(os.path.splitext(os.path.basename(cpt))[0].split('_')[1][1:])
     
     print("Args:", args)
 
@@ -143,6 +146,9 @@ if __name__ == "__main__":
 
     # Perlin noise
     perlin = args.perlin
+
+    # Synthetic mixtures
+    synth = args.synth
 
     # Use wandb
     use_wandb = args.wandb
@@ -243,6 +249,8 @@ if __name__ == "__main__":
         model.train()
         for volumes, labels, masks, noise in tqdm(trainloader):
             target = (labels.view(-1, 1, 1, 1, 1) + 1) * masks
+            if synth:
+                volumes, masks, target = combine_scans(volumes * masks, masks, target)
             out = model(get_input(volumes, masks, noise).to(device))
             
             optimizer.zero_grad()

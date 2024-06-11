@@ -29,4 +29,7 @@ NUM_WORKERS=16
 # python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --num_workers $NUM_WORKERS --wandb
 # python train3d.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --perlin --num_workers $NUM_WORKERS --wandb
 
-python train3d_seg.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size $BATCH_SIZE --epochs $EPOCHS --lr_step $LR_STEP --perlin --num_workers $NUM_WORKERS --wandb
+# python train3d_seg.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size 16 --epochs $EPOCHS --lr_step $LR_STEP --perlin --num_workers $NUM_WORKERS --wandb
+# python train3d_seg.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size 16 --epochs $EPOCHS --lr_step $LR_STEP --perlin --num_workers $NUM_WORKERS --wandb --from_cpt "/work3/s191510/models/bn-seg-checkpoints/run-20240607-112444/cpts/r18_e80_best.cpt"
+python train3d_seg.py --model_type $MODEL_TYPE --lr 1e-4 --batch_size 16 --epochs 80 --lr_step 40 --perlin --synth --num_workers $NUM_WORKERS --wandb --from_cpt "/work3/s191510/models/bn-seg-checkpoints/run-synth/cpts/r18_e0.cpt"
+# python train3d_seg.py --model_type "" --lr 1e-4 --batch_size 16 --epochs 200 --lr_step 159 --perlin --num_workers 16 --wandb --from_cpt "/work3/s191510/models/bn-seg-checkpoints/run-20240607-112444/cpts/r18_e80_best"

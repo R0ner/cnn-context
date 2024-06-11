@@ -264,7 +264,7 @@ transform_shared_augment_seg = transforms.Compose(
         T.RandomAxisFlip(2),
         T.RandomTranspose(),
         transforms.RandomApply([T.RandomRotation((360, 360, 360))], p=0.3),
-        transforms.RandomApply([T.RollJitter((128, 128, 128), (-3, -2, -1))], p=0.5),
+        transforms.RandomApply([T.RollJitter((42, 42, 42), (-3, -2, -1))], p=0.5),
     ]
 )
 

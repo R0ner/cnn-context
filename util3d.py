@@ -70,3 +70,33 @@ def get_obj_score3d(slc, masks):
     )
 
     return obj_score
+
+def combine_scans(volumes, masks, targets, threshold=0.05):
+    bs = volumes.size(0)
+    while bs > 1:
+        bs_h = bs // 2
+        masks_u = masks[:bs_h] | masks[bs_h : 2 * bs_h]
+        masks_i = masks[:bs_h] & masks[bs_h : 2 * bs_h]
+
+        intrs = masks_i.view(bs_h, masks.size(1), -1).sum(-1)
+        sizes = masks.view(masks.size(0), masks.size(1), -1).sum(-1)
+        fracs = intrs / sizes[:bs_h], intrs / sizes[bs_h : 2 * bs_h]
+        keep = (sum(fracs) < 2 * threshold).flatten()
+
+        if keep.any():
+
+            idx_smallest = (fracs[0] > fracs[1]).long().flatten() * bs_h + torch.arange(
+                bs_h
+            )
+            volumes_i = (volumes[idx_smallest] * masks_i)[keep]
+            volumes[:bs_h][keep] = (
+                volumes[:bs_h][keep] + volumes[bs_h : 2 * bs_h][keep] - volumes_i
+            )
+            
+            targets_i = (targets[idx_smallest] * masks_i)[keep]
+            targets[:bs_h][keep] = (
+                targets[:bs_h][keep] + targets[bs_h : 2 * bs_h][keep] - targets_i
+            )
+            masks[:bs_h][keep] = masks_u[keep]
+        bs = bs_h
+    return volumes, masks, targets
