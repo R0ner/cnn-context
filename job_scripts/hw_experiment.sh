@@ -5,7 +5,7 @@
 #BSUB -n 4
 # #BSUB -R "span[hosts=1]"
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -W 1440
+#BSUB -W 720
 #BSUB -R "rusage[mem=16384]"
 
 nvidia-smi
@@ -24,7 +24,7 @@ BATCH_SIZE=16
 
 LR_PAT=40 # Learning rate patience
 PAT=75 # Early stopping patience
-WARMUP=200 # N warmup epochs before reducing lr and doing early stopping
+WARMUP=150 # N warmup epochs before reducing lr and doing early stopping
 SMOOTH_MODE="ma" # Smoothing for learning rate scheduling and early stopping
 N_SMOOTH=10 # no. steps to include in smoothing (see "smooth_mode") 
 
@@ -64,8 +64,17 @@ SP_MODE="elastic"
 # python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd $WD --batch_size $BATCH_SIZE --sp_loss --sp_lw "last" --sp_weight $SP_WEIGHT --sp_exact --sp_mode $SP_MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
 
 # Input gradient regularization loss?
-WD=0.0
-MODE="l1"
-python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd $WD --batch_size $BATCH_SIZE  --gr_loss --gr_weight 1e3 --gr_mode $MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
-# python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd $WD --batch_size $BATCH_SIZE  --gr_loss --gr_weight 1e4 --gr_mode $MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+# WD=0.0
+# MODE="l1"
+# python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd $WD --batch_size $BATCH_SIZE  --gr_loss --gr_weight 1e3 --gr_mode $MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+# python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd $WD --batch_size $BATCH_SIZE  --gr_loss --gr_weight 2e4 --gr_mode $MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
 # python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd $WD --batch_size $BATCH_SIZE  --gr_loss --gr_weight 1e5 --gr_mode $MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+
+# python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd 0.0 --batch_size 16 --cnt_loss --cnt_weight 0.1 --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+# python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd 0.0 --batch_size 16 --cnt_loss --cnt_weight 10 --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+# python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd 0.0 --batch_size 16 --cnt_loss --cnt_weight 1 --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+
+
+# Semantic Alignment Loss!
+MODE="l2"
+python train.py --model_type "r18" --lr 1e-4 --wd 0.0 --batch_size $BATCH_SIZE --cnt_loss --cnt_weight 0.75 --cnt_cos_weight 0.5 --cnt_mode $MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
