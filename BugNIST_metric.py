@@ -113,8 +113,67 @@ def score(solution: pd.DataFrame, submission: pd.DataFrame, row_id_column_name: 
 
     return np.mean(f1_scores)
 
+def all_scores(solution: pd.DataFrame, submission: pd.DataFrame, row_id_column_name: str = "filename"):
+    """
+    Calculate the score for the given solution and submission dataframes.
 
-# %%
+    Args:
+        solution (pd.DataFrame): DataFrame containing the ground truth data.
+        submission (pd.DataFrame): DataFrame containing the submission data.
+        row_id_column_name (str): Name of the column containing row IDs.
+
+    Returns:
+        float: Score for the submission.
+    """
+    scores = []
+    for i in range(len(submission)):
+        if pd.isna(submission.iloc[i, 1]):
+            raise ParticipantVisibleError(f"Nan value not supported. Found on line {i} in submission file")
+
+        # Extracts data for each line
+        pred_centerpoints = submission.iloc[i, 1].replace(" ", "").rstrip(";").split(";")  # Removes whitespace and last ';' if applicable
+        sol_centerpoints = solution.iloc[i, 1].split(";")
+        pred_filename = str(submission.iloc[i, 0])
+        sol_filename = str(solution.iloc[i, 0])
+
+        if pred_filename != sol_filename:
+            raise ParticipantVisibleError("Internal error: solution and submission are not lined up")
+
+        if len(pred_centerpoints) % 4 != 0:
+            raise ParticipantVisibleError(
+                f"Submission for file {pred_filename}, index {i} could not be separated based on ';' into segmentations of size 4. Instead, got a list of size {len(pred_centerpoints)} % 4 != 0"
+            )
+
+        # Extract center coordinates and labels from submission and solution
+        filtered_centerpoints = [float(item) for item in pred_centerpoints if not re.search("[a-zA-Z]", item)]
+        filtered_true_centerpoints = [float(item) for item in sol_centerpoints if not re.search("[a-zA-Z]", item)]
+        pred_centers = np.array(list(zip(filtered_centerpoints[::3], filtered_centerpoints[1::3], filtered_centerpoints[2::3])))
+        true_centers = np.array(list(zip(filtered_true_centerpoints[::3], filtered_true_centerpoints[1::3], filtered_true_centerpoints[2::3])))
+
+        # Converts labels to numbers
+        index_to_label = np.array(["sl", "bc", "ma", "gh", "ac", "bp", "bf", "cf", "bl", "ml", "wo", "pp"])
+        label_to_index = {k.lower(): i for i, k in enumerate(index_to_label)}
+        label_to_index["gp"] = label_to_index["bp"]
+
+        try:
+            pred_labels = np.array([label_to_index[label.lower()] for label in pred_centerpoints[::4]])
+            true_labels = np.array([label_to_index[label.lower()] for label in sol_centerpoints[::4]])
+        except KeyError:
+            raise ParticipantVisibleError(f"Invalid class label in {pred_centerpoints[::4]}, should match any of {index_to_label}")
+
+        # Calculate cost matrix and perform matching
+        cost = cdist(pred_centers, true_centers)
+        matches = np.array(scipy.optimize.linear_sum_assignment(cost), dtype=np.int32)
+
+        # Filter matches based on matched labels
+        # matched_box_labels = pred_labels[matches[0]]
+        # matched_center_labels = true_labels[matches[1]]
+        # matches = matches[:, matched_box_labels == matched_center_labels]
+
+        # Calculate scores
+        scores.append(match_precision_recall(matches, pred_labels, true_labels))
+    return scores
+
 def main(pred, target):
     # loads data from csv files
     df_pred = pd.read_csv(pred)
