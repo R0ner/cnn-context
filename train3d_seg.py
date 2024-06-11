@@ -67,7 +67,7 @@ def get_args_parser() -> argparse.ArgumentParser:
 
     # Model parameters
     parser.add_argument(
-        "--model_type", type=str, default="r18", help="Model type (r18 or r50)"
+        "--model_type", type=str, default="", help=""
     )
 
     # Learning rate scheduling
@@ -84,6 +84,12 @@ def get_args_parser() -> argparse.ArgumentParser:
 
     # weights and biases
     parser.add_argument("--wandb", action="store_true")
+
+    # Continue from ckeckpoints
+    parser.add_argument(
+        "--from_cpt", type=str, help="Checkpoint path"
+    )
+
     return parser
 
 
@@ -93,6 +99,17 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    cpt = None
+    epoch = 0
+    if args.from_cpt:
+        cpt = args.from_cpt
+        save_dir = os.path.dirname(os.path.dirname(args.from_cpt))
+        with open(f'{save_dir}/config.json') as f:
+            config = json.load(f)
+        parser.set_defaults(**config)
+        args = parser.parse_args()
+        epoch = int(os.path.basename(cpt).split('_')[1][1:])
+    
     print("Args:", args)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -130,14 +147,15 @@ if __name__ == "__main__":
     # Use wandb
     use_wandb = args.wandb
 
-    save_dir = (
-        f"/work3/s191510/models/bn-seg-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
-    )
-
-    while os.path.exists(save_dir):
+    if cpt is None:
         save_dir = (
             f"/work3/s191510/models/bn-seg-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
         )
+
+        while os.path.exists(save_dir):
+            save_dir = (
+                f"/work3/s191510/models/bn-seg-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
+            )
     save_dir_model = f"{save_dir}/cpts"
 
     for dir in (save_dir, save_dir_model):
@@ -145,15 +163,16 @@ if __name__ == "__main__":
             os.mkdir(dir)
 
     # Save args.
-    with open(f"{save_dir}/config.json", "w") as f:
-        json.dump(args.__dict__, f, indent=6)
+    if cpt is None:
+        with open(f"{save_dir}/config.json", "w") as f:
+            json.dump(args.__dict__, f, indent=6)
 
     if use_wandb:
         wandb.init(
             # set the wandb project where this run will be logged
             project="BugNIST-segmentation",
             # track hyperparameters and run metadata
-            config={"architecture": model_types[model_type], "batch_size": batch_size},
+            config={"architecture": "UNet", "batch_size": batch_size},
         )
 
     subset = list(name_legend.keys())
@@ -181,6 +200,11 @@ if __name__ == "__main__":
     )
 
     model = get_model(model_type=model_type, device=device, seed=seed)
+    
+    if cpt is not None:
+        checkpoint = torch.load(cpt)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        del checkpoint
 
     ce_weight = torch.ones(len(name_legend) + 1, device=device)
     ce_weight[0] = 0.1
@@ -191,6 +215,9 @@ if __name__ == "__main__":
     optimizer = Adam(model.parameters(), lr=lr)
 
     scheduler = StepLR(optimizer, step_size=lr_step, gamma=0.1)
+    # This is a hack to get around loading scheduler state dict.
+    for _ in range(epoch):
+        scheduler.step()
 
     # Metrics
     if perlin:
@@ -200,8 +227,9 @@ if __name__ == "__main__":
 
     best = float("inf")
 
-    stats = {}
-    for epoch in range(n_epochs):
+    stats_path = f"{save_dir}/stats.csv"
+    for epoch in range(epoch+1, n_epochs):
+        stats = {}
         metrics_train = {
             "loss": [],
             "accuracy": [],
@@ -245,6 +273,7 @@ if __name__ == "__main__":
             "train_accuracy": np.mean(metrics_train["accuracy"]),
             "val_loss": np.mean(metrics_val["loss"]),
             "val_accuracy": np.mean(metrics_val["accuracy"]),
+            "epoch": epoch
         }
         print(performance)
         stats[epoch] = performance
@@ -273,13 +302,23 @@ if __name__ == "__main__":
 
         if save:
             torch.save(
-                {"epoch": epoch, "model_state_dict": model.state_dict()},
+                {"epoch": epoch, "model_state_dict": model.state_dict(), "lr_scheduler_state_dict": scheduler.state_dict()},
                 f"{save_dir_model}/{model_type}_e{epoch}{suffix}.cpt",
             )
 
-        if (epoch + 1) % 10 == 0:
-            stats_df = pd.DataFrame.from_dict(stats, orient="index")
+        if (epoch + 1) % 1 == 0:
+            stats_epoch_df = pd.DataFrame.from_dict(stats, orient="index")
+            if os.path.exists(stats_path):
+                stats_df = pd.read_csv(f"{save_dir}/stats.csv", index_col=0)
+                stats_df = pd.concat((stats_df, stats_epoch_df))
+            else:
+                stats_df = stats_epoch_df
             stats_df.to_csv(f"{save_dir}/stats.csv")
         
-    stats_df = pd.DataFrame.from_dict(stats, orient="index")
+    stats_epoch_df = pd.DataFrame.from_dict(stats, orient="index")
+    if os.path.exists(stats_path):
+        stats_df = pd.read_csv(f"{save_dir}/stats.csv", index_col=0)
+        stats_df = pd.concat((stats_df, stats_epoch_df))
+    else:
+        stats_df = stats_epoch_df
     stats_df.to_csv(f"{save_dir}/stats.csv")
