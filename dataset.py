@@ -14,11 +14,12 @@ from torchvision.tv_tensors import BoundingBoxes
 class HWSet(Dataset):
     """Dataset class for the Husky vs. Wolf dataset."""
 
-    def __init__(self, data_dir, split, transform=None, spurious=False):
+    def __init__(self, data_dir, split, transform=None, spurious=False, subset=1.0):
         self.data_dir = data_dir
         self.split = split.lower()
         self.transform = transform
         self.spurious = spurious
+        self.subset = subset
 
         self.val_img_dir = f"{self.data_dir}/val_images_hw"
         self.test_img_dir = f"{self.data_dir}/test_images_hw"
@@ -64,6 +65,14 @@ class HWSet(Dataset):
 
 
         assert len(self.imgs) == self.labels.size
+
+        self.subset_indices = np.load(f"{data_dir}/train_subset_indices.npy")
+
+        if self.subset < 1:
+            orig_len = len(self)
+            self.subset_indices = self.subset_indices[:int(orig_len) * self.subset]
+            self.imgs = [self.imgs[i] for i in self.subset_indices]
+            self.labels = self.labels[self.subset_indices]
     
     def add_spurious(self, img, xo=5, yo=5):
         if torch.is_tensor(img):
@@ -94,8 +103,8 @@ class HWSet(Dataset):
 class HWSetMasks(HWSet):
     """Dataset class for returning images with their segmentation masks."""
 
-    def __init__(self, data_dir, split, transform_shared=None, transform_img=None, require_bbox=False, spurious=False):
-        super().__init__(data_dir, split, transform=None, spurious=spurious)
+    def __init__(self, data_dir, split, transform_shared=None, transform_img=None, require_bbox=False, spurious=False, subset=1.0):
+        super().__init__(data_dir, split, transform=None, spurious=spurious, subset=subset)
         self.transform_shared = transform_shared
         self.transform_img = transform_img
         self.require_bbox=require_bbox
@@ -125,6 +134,9 @@ class HWSetMasks(HWSet):
         if self.require_bbox:
             self.call_transform_shared = self.transform_shared
             self.transform_shared = self.transformwbbox
+        
+        if self.subset < 1:
+            self.masks = [self.masks[i] for i in self.subset_indices]
         
     def transformwbbox(self, img, mask):
         img, bbox, mask = self.call_transform_shared(img, BoundingBoxes(masks_to_boxes(to_image(mask)), format="XYXY", canvas_size=img.size[::-1]), mask)
@@ -159,6 +171,7 @@ class HWSetNoise(HWSetMasks):
         transform_noise=None,
         require_bbox=False,
         spurious=False,
+        subset=1.0,
     ):
         super().__init__(
             data_dir,
@@ -167,6 +180,7 @@ class HWSetNoise(HWSetMasks):
             transform_img=transform_img,
             require_bbox=require_bbox,
             spurious=spurious,
+            subset=subset,
         )
         self.transform_noise = transform_noise
 
@@ -275,7 +289,7 @@ def get_dloader(split, batch_size, data_dir="data", noise=False, **kwargs):
         return get_dloader_mask(split, batch_size, data_dir=data_dir, **kwargs)
 
 
-def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
+def get_dloader_mask(split, batch_size, data_dir="data", spurious=False, subset=1.0, **kwargs):
     split = split.lower()
     shuffle = False
     if split == "train":
@@ -285,6 +299,8 @@ def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
             transform_shared=transform_shared_augment,
             transform_img=transform_img_augment,
             require_bbox=True,
+            spurious=spurious,
+            subset=subset,
         )
         shuffle = True
     else:
@@ -293,6 +309,7 @@ def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
             split,
             transform_shared=transform_test,
             transform_img=None,
+            spurious=spurious,
         )
     dloader = DataLoader(
         dset,
@@ -304,7 +321,7 @@ def get_dloader_mask(split, batch_size, data_dir="data", **kwargs):
     return dloader
 
 
-def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
+def get_dloader_noise(split, batch_size, data_dir="data", spurious=False, subset=1.0, **kwargs):
     split = split.lower()
     shuffle = False
     if split == "train":
@@ -315,6 +332,8 @@ def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
             transform_img=transform_img_augment,
             transform_noise=transform_noise_augment,
             require_bbox=True,
+            spurious=spurious,
+            subset=subset,
         )
         shuffle = True
     else:
@@ -324,6 +343,7 @@ def get_dloader_noise(split, batch_size, data_dir="data", **kwargs):
             transform_shared=transform_test,
             transform_img=None,
             transform_noise=None,
+            spurious=spurious,
         )
 
     dloader = DataLoader(
