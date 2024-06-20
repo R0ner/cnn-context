@@ -76,5 +76,12 @@ SP_MODE="elastic"
 
 
 # Semantic Alignment Loss!
-MODE="l2"
-python train.py --model_type "r18" --lr 1e-4 --wd 0.0 --batch_size $BATCH_SIZE --cnt_loss --cnt_weight 0.75 --cnt_cos_weight 0.5 --cnt_mode $MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+# MODE="l2"
+# python train.py --model_type "r18" --lr 1e-4 --wd 0.0 --batch_size $BATCH_SIZE --cnt_loss --cnt_weight 0.75 --cnt_cos_weight 0.5 --cnt_mode $MODE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+
+# Weight decay
+SUBSET=0.25
+python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd 1e-2 --subset $SUBSET --batch_size $BATCH_SIZE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd 5e-3 --subset $SUBSET --batch_size $BATCH_SIZE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd 1e-3 --subset $SUBSET --batch_size $BATCH_SIZE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb
+# python train.py --model_type $MODEL_TYPE --lr 1e-4 --wd 1e-4 --subset $SUBSET --batch_size $BATCH_SIZE --lr_patience $LR_PAT --patience $PAT --warmup $WARMUP --smooth_mode $SMOOTH_MODE --n_smooth $N_SMOOTH --num_workers $NUM_WORKERS --wandb

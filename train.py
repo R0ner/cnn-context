@@ -96,10 +96,17 @@ def get_args_parser() -> argparse.ArgumentParser:
         type=str,
         help="One of ['l1', 'l2'] (see L1 and L2 norm).",
     )
+
+    # Add spurious correlator
+    parser.add_argument("--spurious", action="store_true")
+
+    # Subset training data
+    parser.add_argument("--subset", default=1.0, type=float) 
+
     # Model parameters
     parser.add_argument(
         "--model_type", type=str, default="r18", help="Model type (r18 or r50)"
-    )
+    )    
 
     # Learning rate scheduler and early stopping
     parser.add_argument("--lr_patience", default=20, type=int)
@@ -170,6 +177,12 @@ if __name__ == "__main__":
 
     assert sp_loss + gr_loss + contrast_loss < 2, "Cannot use more than 1 loss function at a time."
 
+    # Spurious correlator
+    spurious = args.spurious
+
+    # Subset of training set
+    subset = args.subset
+
     names = ("a", "b", "c")
 
     save_dir = f"models/hw-checkpoints/run-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -197,12 +210,6 @@ if __name__ == "__main__":
 
     # Loss function
     if sp_loss:
-        criterion = torch.nn.CrossEntropyLoss()
-    elif gr_loss:
-        criterion = grCriterion(weight=args.gr_weight, mode=args.gr_mode)
-    elif contrast_loss:
-        criterion = ContrastCriterion(weight=args.cnt_weight, cos_weight=args.cnt_cos_weight, mode=args.cnt_mode, device=device)
-    else:
         criterion = SuperpixelCriterion(
             model_type,
             sp_loss_weight=args.sp_weight,
@@ -214,6 +221,12 @@ if __name__ == "__main__":
             mode=args.sp_mode,
             device=device,
         )
+    elif gr_loss:
+        criterion = grCriterion(weight=args.gr_weight, mode=args.gr_mode)
+    elif contrast_loss:
+        criterion = ContrastCriterion(weight=args.cnt_weight, cos_weight=args.cnt_cos_weight, mode=args.cnt_mode, device=device)
+    else:
+        criterion = torch.nn.CrossEntropyLoss()
 
     # Optimizers
     optimizers = {
@@ -274,6 +287,8 @@ if __name__ == "__main__":
         "train",
         batch_size=batch_size,
         noise=True,
+        subset=subset,
+        spurious=spurious,
         num_workers=num_workers,
         pin_memory=True,
         persistent_workers=persistent_workers,
@@ -286,18 +301,34 @@ if __name__ == "__main__":
         pin_memory=True,
         persistent_workers=persistent_workers,
     )
+    valloaders = [valloader]
+    if spurious:
+        valloader_spurious = get_dloader(
+            "val",
+            batch_size=1,
+            noise=True,
+            spurious=True,
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=persistent_workers,
+        )
+        valloaders.append(valloader_spurious)
 
     # WandB
+    project_name = "HW-context" if not spurious else "HW-context-spurious"
     if use_wandb:
         wandb.init(
             # set the wandb project where this run will be logged
-            project="HW-context",
+            project=project_name,
             # track hyperparameters and run metadata
             config={"architecture": model_types[model_type], "batch_size": batch_size},
         )
 
     all_stats = {}
     completed = {k: False for k in names}
+    if spurious:
+        completed['b'] = True
+        completed['c'] = True
 
     best = {name: float("inf") for name in names}
 
@@ -319,6 +350,9 @@ if __name__ == "__main__":
     for epoch in range(n_epochs):
         metrics_train = {k: metrics_train_dict() for k in names}
         metrics_val = {k: metrics_val_dict() for k in names}
+        metrics_val_spurious = {}
+        if spurious:
+            metrics_val_spurious = {k: metrics_val_dict() for k in names}
 
         print(f"Epoch {epoch}")
 
@@ -369,43 +403,44 @@ if __name__ == "__main__":
         # Val
         for model in models.values():
             model.eval()
-        for imgs, labels, masks, noise in tqdm(valloader):
-            eval_step(
-                models["a"],
-                normalize_hw(imgs),
-                labels,
-                masks,
-                criterion,
-                device=device,
-                metrics=metrics_val["a"],
-                return_features=sp_loss,
-                gr=gr_loss,
-                contrast=contrast_loss,
-            )
-            eval_step(
-                models["b"],
-                normalize_hw_mask(imgs) * masks,
-                labels,
-                masks,
-                criterion,
-                device=device,
-                metrics=metrics_val["b"],
-                return_features=sp_loss,
-                gr=gr_loss,
-                contrast=contrast_loss,
-            )
-            eval_step(
-                models["c"],
-                normalize_hw_mask(imgs * masks + noise * (~masks)),
-                labels,
-                masks,
-                criterion,
-                device=device,
-                metrics=metrics_val["c"],
-                return_features=sp_loss,
-                gr=gr_loss,
-                contrast=contrast_loss,
-            )
+        for dloader, metrics in zip(valloaders, (metrics_val, metrics_val_spurious)):
+            for imgs, labels, masks, noise in tqdm(dloader):
+                eval_step(
+                    models["a"],
+                    normalize_hw(imgs),
+                    labels,
+                    masks,
+                    criterion,
+                    device=device,
+                    metrics=metrics["a"],
+                    return_features=sp_loss,
+                    gr=gr_loss,
+                    contrast=contrast_loss,
+                )
+                eval_step(
+                    models["b"],
+                    normalize_hw_mask(imgs) * masks,
+                    labels,
+                    masks,
+                    criterion,
+                    device=device,
+                    metrics=metrics["b"],
+                    return_features=sp_loss,
+                    gr=gr_loss,
+                    contrast=contrast_loss,
+                )
+                eval_step(
+                    models["c"],
+                    normalize_hw_mask(imgs * masks + noise * (~masks)),
+                    labels,
+                    masks,
+                    criterion,
+                    device=device,
+                    metrics=metrics["c"],
+                    return_features=sp_loss,
+                    gr=gr_loss,
+                    contrast=contrast_loss,
+                )
 
         # Calculate performance metrics
         log_stats = dict()
@@ -416,6 +451,8 @@ if __name__ == "__main__":
                 continue
             performance_train = get_performance(metrics_train[k])
             performance_val = get_performance(metrics_val[k])
+            if spurious:
+                performance_val = {**performance_val, **{f"{k}_spur": v for k, v in get_performance(metrics_val_spurious[k]).items()}}
 
             for split, performance in (('Train', performance_train), ('Val', performance_val)):
                 pstr = f"{split} performance: "

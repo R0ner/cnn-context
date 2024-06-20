@@ -1,5 +1,5 @@
 import os
-from random import randint
+from random import randint, uniform
 
 import numpy as np
 import torch
@@ -29,7 +29,9 @@ class HWSet(Dataset):
         self.train_img_dirs = [
             img_dir for img_dir in self.train_img_dirs if os.path.exists(img_dir)
         ]
-
+        
+        self.spurious_p = 1.0
+        self.spurious_trigger = lambda label: True
         if self.split == "val":
             self.imgs = [
                 f"{self.val_img_dir}/{img_file}"
@@ -41,6 +43,8 @@ class HWSet(Dataset):
                 self.imgs.extend(
                     [f"{img_dir}/{img_file}" for img_file in os.listdir(img_dir)]
                 )
+            self.spurious_p = 0.5
+            self.spurious_trigger = lambda label: label == 1
         elif self.split == "test":
             self.imgs = [
                 f"{self.test_img_dir}/{img_file}"
@@ -59,29 +63,32 @@ class HWSet(Dataset):
         self.labels = np.array(self.labels)
 
         if self.spurious:
-            self.spurious_template = np.load(f"{data_dir}/w_template.npy")
+            self.spurious_template = np.load(f"{self.data_dir}/w_template.npy")
             self.spurious_template = np.repeat(self.spurious_template.reshape(1, *self.spurious_template.shape), 3, 0)
             self.spurious_template_torch = torch.from_numpy(self.spurious_template)
 
 
         assert len(self.imgs) == self.labels.size
 
-        self.subset_indices = np.load(f"{data_dir}/train_subset_indices.npy")
+        self.subset_indices = np.load(f"{self.data_dir}/train_subset_indices.npy")
 
         if self.subset < 1:
             orig_len = len(self)
-            self.subset_indices = self.subset_indices[:int(orig_len) * self.subset]
+            self.subset_indices = self.subset_indices[:int(orig_len * self.subset)]
             self.imgs = [self.imgs[i] for i in self.subset_indices]
             self.labels = self.labels[self.subset_indices]
-    
-    def add_spurious(self, img, xo=5, yo=5):
+        
+    def add_spurious(self, img, xo=5, yo=5, fill=1.0):
+        if uniform(0, 1) > self.spurious_p:
+            return img
         if torch.is_tensor(img):
             wt = self.spurious_template_torch
+            img = torch.clone(img)
         elif isinstance(img, np.ndarray):
             wt = self.spurious_template
         else:
             raise ValueError
-        img[:, xo : wt.shape[-2] + xo, yo : wt.shape[-1] + yo][wt == 255] = 255
+        img[:, xo : wt.shape[-2] + xo, yo : wt.shape[-1] + yo][wt == 255] = fill
         img[:, xo : wt.shape[-2] + xo, yo : wt.shape[-1] + yo][(wt < 255) & (wt > 0)] = 0
         return img
 
@@ -90,14 +97,15 @@ class HWSet(Dataset):
 
     def __getitem__(self, item):
         img = Image.open(self.imgs[item])
+        label = self.labels[item]
 
         if self.transform is not None:
             img = self.transform(img)
         
-        if self.spurious:
+        if self.spurious and self.spurious_trigger(label):
             img = self.add_spurious(img)
         
-        return (img, self.labels[item])
+        return (img, label)
 
 
 class HWSetMasks(HWSet):
@@ -145,6 +153,7 @@ class HWSetMasks(HWSet):
     def __getitem__(self, item):
         img = Image.open(self.imgs[item]).convert("RGB")
         mask = Image.open(self.masks[item])
+        label = self.labels[item]
 
         if self.transform_shared is not None:
             img, mask = self.transform_shared(img, mask)
@@ -153,7 +162,7 @@ class HWSetMasks(HWSet):
         if self.transform_img is not None:
             img = self.transform_img(img)
         
-        if self.spurious:
+        if self.spurious and self.spurious_trigger(label):
             img = self.add_spurious(img)
 
         return img, self.labels[item], mask, torch.empty(0)
