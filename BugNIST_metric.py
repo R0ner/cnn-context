@@ -38,12 +38,12 @@ def match_precision_recall(matches: np.ndarray, pred_labels: np.ndarray, true_la
     matches_class = matches[:, pred_match_labels == true_match_labels]
 
     # Detection metrics
-    precision_detect = matches.shape[1] / pred_labels.shape[0]
+    precision_detect = matches.shape[1] / (pred_labels.shape[0] + 1e-14)
     recall_detect = matches.shape[1] / true_labels.shape[0]
     f1_detect = 2 * precision_detect * recall_detect / (precision_detect + recall_detect + eps)
 
     # Class metrics
-    precision_classes = matches_class.shape[1] / pred_labels.shape[0]
+    precision_classes = matches_class.shape[1] / (pred_labels.shape[0] + 1e-14)
     recall_classes = matches_class.shape[1] / true_labels.shape[0]
     f1_classes = 2 * precision_classes * recall_classes / (precision_classes + recall_classes + eps)
 
@@ -138,7 +138,10 @@ def all_scores(solution: pd.DataFrame, submission: pd.DataFrame, row_id_column_n
 
         if pred_filename != sol_filename:
             raise ParticipantVisibleError("Internal error: solution and submission are not lined up")
-
+        
+        if len(pred_centerpoints) == 1:
+            pred_centerpoints.pop()
+        
         if len(pred_centerpoints) % 4 != 0:
             raise ParticipantVisibleError(
                 f"Submission for file {pred_filename}, index {i} could not be separated based on ';' into segmentations of size 4. Instead, got a list of size {len(pred_centerpoints)} % 4 != 0"
@@ -162,8 +165,11 @@ def all_scores(solution: pd.DataFrame, submission: pd.DataFrame, row_id_column_n
             raise ParticipantVisibleError(f"Invalid class label in {pred_centerpoints[::4]}, should match any of {index_to_label}")
 
         # Calculate cost matrix and perform matching
-        cost = cdist(pred_centers, true_centers)
-        matches = np.array(scipy.optimize.linear_sum_assignment(cost), dtype=np.int32)
+        if pred_centers.shape[0] == 0:
+            matches = np.zeros((2, 0), dtype=np.int32)
+        else:
+            cost = cdist(pred_centers, true_centers)
+            matches = np.array(scipy.optimize.linear_sum_assignment(cost), dtype=np.int32)
 
         # Filter matches based on matched labels
         # matched_box_labels = pred_labels[matches[0]]
